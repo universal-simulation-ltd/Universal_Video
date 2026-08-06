@@ -1,0 +1,67 @@
+import { useRef, useState } from 'react'
+import { VIDEO_ACCEPT } from '@unisim/media'
+import { useVideoStore } from '../stores/videoStore'
+
+// The first screen. Its only job is to say what this is and take a file.
+export default function DropZone() {
+  const chooseFile = useVideoStore((s) => s.chooseFile)
+  const supported = useVideoStore((s) => s.supported)
+  const input = useRef<HTMLInputElement>(null)
+  const [over, setOver] = useState(false)
+
+  function take(files: FileList | null) {
+    const file = files?.[0]
+    if (file) void chooseFile(file)
+  }
+
+  return (
+    <div
+      onDragOver={(e) => { e.preventDefault(); setOver(true) }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => { e.preventDefault(); setOver(false); take(e.dataTransfer.files) }}
+      className={`rounded-2xl border-2 border-dashed p-10 text-center transition-colors sm:p-14 ${
+        over
+          ? 'border-orange-500 bg-orange-50 dark:bg-orange-950/20'
+          : 'border-slate-300 bg-white hover:border-orange-400 dark:border-slate-700 dark:bg-slate-900'
+      }`}
+    >
+      <input
+        ref={input}
+        type="file"
+        accept={VIDEO_ACCEPT}
+        className="sr-only"
+        onChange={(e) => take(e.target.files)}
+      />
+
+      <p className="text-base font-semibold text-slate-900 dark:text-slate-100">
+        Drop a video here
+      </p>
+      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+        MP4, M4V and MOV — or
+        {' '}
+        <button
+          type="button"
+          onClick={() => input.current?.click()}
+          className="rounded font-semibold text-orange-700 underline underline-offset-2 hover:text-orange-800 focus-visible:outline-2 focus-visible:outline-orange-600 dark:text-orange-400"
+        >
+          choose a file
+        </button>
+      </p>
+
+      <p className="mt-5 text-xs text-slate-500 dark:text-slate-400">
+        It is opened in this tab. Nothing is uploaded, and there is no size cap,
+        no account, no watermark and no queue.
+      </p>
+
+      {supported === false && (
+        <p className="mx-auto mt-6 max-w-md rounded-xl bg-amber-50 px-4 py-3 text-left text-xs leading-relaxed text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          <strong className="font-semibold">This browser can’t do the encoding.</strong>{' '}
+          Compressing to MP4 needs a WebCodecs H.264 <em>encoder</em>, and this
+          browser doesn’t have one — Firefox is the usual case. Chrome, Edge and
+          Safari 16.4+ do. You can still drop a file to see what it contains, but
+          the conversion will not run.
+        </p>
+      )}
+    </div>
+  )
+}

@@ -1,0 +1,29 @@
+# Cloudflare Pages rewrites — Universal Video is served under /video/ but the
+# built files in dist/ are flat (Vite's `base` only rewrites URLs INSIDE the
+# HTML; it does not place files in dist/video/).
+#
+# 200 status = transparent rewrite (URL bar unchanged). Specific rules first,
+# broad SPA fallback last.
+
+# Service-worker + PWA artefacts.
+/video/sw.js              /sw.js                200
+/video/registerSW.js      /registerSW.js        200
+/video/manifest.webmanifest /manifest.webmanifest 200
+/video/workbox-*          /workbox-:splat       200
+
+# Hashed asset bundles.
+/video/assets/*           /assets/:splat        200
+
+# Static files referenced from index.html / app code (BASE_URL-prefixed).
+/video/favicon.svg        /favicon.svg          200
+/video/unisim-icon.png    /unisim-icon.png      200
+/video/icon-180.png       /icon-180.png         200
+/video/icon-192.png       /icon-192.png         200
+/video/icon-512.png       /icon-512.png         200
+
+# SEO crawler files.
+/video/robots.txt         /robots.txt           200
+/video/sitemap.xml        /sitemap.xml          200
+
+# SPA fallback — everything else under /video/ serves the shell.
+/video/*                  /index.html           200
