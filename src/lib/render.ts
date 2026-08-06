@@ -36,6 +36,7 @@ import {
   type VideoProgress,
   type VideoSettings,
 } from '@unisim/media'
+import { evenEdge, outputFrame } from './frame'
 
 /**
  * Everything the renderer needs that the `Timeline` itself does not carry.
@@ -76,6 +77,16 @@ export function exportRoute(timeline: Timeline): ExportRoute {
   if (clip.startSec > 0.001) return 'render' // leading black is not a trim
   if (clip.transitionIn || clip.transitionOut) return 'render'
   if (clip.audio.gain !== 1) return 'render' // convertVideo has no gain control
+  // ⚠️ A REFRAME IS A LETTERBOX, AND `convertVideo()` CANNOT LETTERBOX. It
+  // scales the source's own frame to a height and writes that, so asking it for
+  // a 1920×1080 output from a portrait clip produces a portrait file with the
+  // reframe silently dropped — the exact failure this feature invites. Only the
+  // timeline renderer composites onto a frame of its own. The comparison is
+  // against the CLIP's source rather than the timeline's first video, because a
+  // single clip cut from the second file has its own shape.
+  if (evenEdge(source.width) !== timeline.width || evenEdge(source.height) !== timeline.height) {
+    return 'render'
+  }
   return 'compress'
 }
 
@@ -99,13 +110,23 @@ export async function exportTimeline(
  * comes back. The files go separately, keyed by source id — the contract
  * deliberately carries no handle on the bytes so the document stays
  * serialisable, and a `File` is a browser object.
+ *
+ * ⚠️ The frame is resolved HERE, and it has to be. `renderTimeline()` encodes at
+ * exactly `timeline.width × height` and takes `TimelineRenderSettings`, which
+ * carries quality and audio bitrate but **no `maxHeight`** — the resolution cap
+ * lives in `VideoSettings`, which this route never passes on. So the cap is
+ * applied to the frame by the same `outputFrame()` the estimate on the button
+ * and the memory refusal are computed from. Without this, picking "720p" on a
+ * multi-clip edit changed the prediction and not the file. See the handover:
+ * this is the one thing about a reframe that arguably belongs in the package.
  */
 async function renderWholeTimeline(
   { timeline, files, settings }: TimelineRenderInput,
   onDetail?: (progress: VideoProgress) => void,
 ): Promise<ConvertedFile> {
+  const frame = outputFrame(timeline, settings)
   const blob = await media.renderTimeline(
-    timeline,
+    { ...timeline, width: frame.width, height: frame.height },
     files,
     { quality: settings.quality, audioBitrateKbps: settings.audioBitrateKbps },
     undefined,

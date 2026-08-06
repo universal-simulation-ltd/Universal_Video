@@ -11,6 +11,7 @@ import {
   setTransition,
   trimClip,
 } from './edit'
+import { applyFrame } from './frame'
 import { exportName, exportRoute, exportTimeline, rendererAvailable, trimForClip } from './render'
 
 function oneVideo(durationSec = 10): Timeline {
@@ -61,6 +62,41 @@ describe('which path an export can take', () => {
   it('a muted single clip still compresses — the clip’s own audio flag decides', () => {
     const base = oneVideo()
     expect(exportRoute(setClipAudio(base, base.clips[0].id, { enabled: false }))).toBe('compress')
+  })
+
+  it('A REFRAMED CLIP GOES TO THE RENDERER, because convertVideo cannot letterbox', () => {
+    // `convertVideo()` scales the source's own frame to a height; it has no
+    // frame of its own to compose into. Taking the compress path for a reframe
+    // would produce a file the source's shape with the reframe silently
+    // dropped — the whole failure mode this feature invites.
+    const portrait = applyFrame(oneVideo(), { preset: 'landscape', custom: { width: 1920, height: 1080 } })
+    expect(portrait.width).toBe(1920)
+    expect(exportRoute(applyFrame(oneVideo(), { preset: 'square', custom: { width: 1920, height: 1080 } })))
+      .toBe('render')
+    expect(exportRoute(applyFrame(oneVideo(), { preset: 'custom', custom: { width: 1280, height: 720 } })))
+      .toBe('render')
+  })
+
+  it('…but a frame that matches the source is still the fast path', () => {
+    const tl = applyFrame(oneVideo(), { preset: 'source', custom: { width: 1920, height: 1080 } })
+    expect(exportRoute(tl)).toBe('compress')
+    // Including when the source's own dimensions were odd and had to be evened:
+    // rounding a 1919-wide file up to 1920 is not a reframe.
+    let odd = emptyTimeline()
+    odd = addSource(odd, describeSource('o', 'video', 'o.mp4', 10, 1919, 1080, true), 30)
+    odd = appendClip(odd, 'o')
+    expect(exportRoute(applyFrame(odd, { preset: 'source', custom: { width: 1920, height: 1080 } })))
+      .toBe('compress')
+  })
+
+  it('sends a single clip cut from a DIFFERENT source than the frame to the renderer', () => {
+    // Two files of different shapes; the frame follows the first video, so the
+    // clip left on the timeline has to be letterboxed into it.
+    let tl = emptyTimeline()
+    tl = addSource(tl, describeSource('wide', 'video', 'wide.mp4', 10, 1920, 1080, true), 30)
+    tl = addSource(tl, describeSource('tall', 'video', 'tall.mp4', 10, 1080, 1920, true), 30)
+    tl = appendClip(tl, 'tall')
+    expect(exportRoute(tl)).toBe('render')
   })
 })
 

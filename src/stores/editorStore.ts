@@ -33,6 +33,15 @@ import {
   setTransition,
   trimClip,
 } from '../lib/edit'
+import {
+  DEFAULT_FRAME,
+  applyFrame,
+  customEdge,
+  outputFrame,
+  type FrameChoice,
+  type FramePresetId,
+  type FrameSize,
+} from '../lib/frame'
 import { planTimelineExport, type TimelinePlan } from '../lib/memory'
 import { FALLBACK_VIEWPORT_PX, FIT, clampZoom, maxZoomFor, pxPerSecFor } from '../lib/zoom'
 import { exportRoute, exportTimeline } from '../lib/render'
@@ -100,6 +109,12 @@ interface EditorState {
   /** The width the timeline has to draw in, measured from the DOM by TimelineView. */
   viewportPx: number
   settings: VideoSettings
+  /**
+   * The output frame the movie is composed into. A property of the MOVIE, not
+   * of a clip — which is why it lives here and is edited in the export panel
+   * rather than in the clip inspector.
+   */
+  frame: FrameChoice
   plan: TimelinePlan | null
   progress: RunProgress | null
   result: ConvertedFile | null
@@ -126,6 +141,8 @@ interface EditorState {
   cardDuration(sourceId: SourceId, seconds: number): void
 
   updateSettings(patch: Partial<VideoSettings>): void
+  setFramePreset(preset: FramePresetId): void
+  setCustomFrame(patch: Partial<FrameSize>): void
   acceptAlternative(): void
   exportEdit(): Promise<void>
   download(): void
@@ -143,13 +160,21 @@ export const useEditorStore = create<EditorState>((set, get) => {
    * Re-plan after anything that changes what would be exported. The refusal is
    * recomputed on every edit rather than at the moment of pressing Export,
    * because §10.4's whole point is that the answer arrives before the work does.
+   *
+   * The chosen frame is stamped on FIRST, and that ordering matters twice over.
+   * `addSource()` adopts the first video's shape, so a drop after a reframe
+   * would otherwise put the frame back; and the memory plan budgets
+   * `Σ sources + 2 × output`, so reframing a phone clip up to 1080p changes the
+   * output term by a factor of eight — it has to be counted here, while the
+   * user can still change it, rather than discovered when Export is pressed.
    */
   function reflow(timeline: Timeline, overrides: Partial<EditorState> = {}) {
-    const { assets, settings } = get()
-    const plan = timeline.clips.length
-      ? planTimelineExport(timeline, residentBytes(timeline, assets), settings)
+    const { assets, settings, frame } = get()
+    const framed = applyFrame(timeline, frame)
+    const plan = framed.clips.length
+      ? planTimelineExport(framed, residentBytes(framed, assets), settings)
       : null
-    set({ timeline, plan, ...overrides } as Partial<EditorState>)
+    set({ timeline: framed, plan, ...overrides } as Partial<EditorState>)
   }
 
   return {
@@ -163,6 +188,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     zoomFactor: FIT,
     viewportPx: FALLBACK_VIEWPORT_PX,
     settings: DEFAULT_VIDEO_SETTINGS,
+    frame: DEFAULT_FRAME,
     plan: null,
     progress: null,
     result: null,
@@ -307,6 +333,24 @@ export const useEditorStore = create<EditorState>((set, get) => {
       reflow(get().timeline)
     },
 
+    setFramePreset: (preset) => {
+      set({ frame: { ...get().frame, preset } })
+      reflow(get().timeline)
+    },
+
+    // Evened on the way IN, so an odd number never reaches the timeline and the
+    // renderer's "both edges have to be even numbers" refusal stays unreachable
+    // from this control (see `lib/frame.ts`).
+    setCustomFrame: (patch) => {
+      const { custom } = get().frame
+      const next = {
+        width: customEdge(patch.width ?? custom.width),
+        height: customEdge(patch.height ?? custom.height),
+      }
+      set({ frame: { ...get().frame, custom: next } })
+      reflow(get().timeline)
+    },
+
     acceptAlternative: () => {
       const alternative = get().plan?.alternative
       if (!alternative) return
@@ -384,6 +428,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
         // wrong-width timeline.
         zoomFactor: FIT,
         settings: DEFAULT_VIDEO_SETTINGS,
+        frame: DEFAULT_FRAME,
         plan: null,
         progress: null,
         result: null,
@@ -406,6 +451,14 @@ export const selectMaxZoom = (s: EditorState) => maxZoomFor(s.viewportPx, timeli
 export const selectSelectedClip = (s: EditorState) =>
   s.selectedClipId ? clipById(s.timeline, s.selectedClipId) : undefined
 export const selectRoute = (s: EditorState) => exportRoute(s.timeline)
+/**
+ * The exported frame size — what the file will really be. The player draws its
+ * canvas at this shape, so the preview's black bars are the file's black bars.
+ * Selected as two numbers rather than an object because a selector returning a
+ * fresh object every render has no stable identity to compare.
+ */
+export const selectFrameWidth = (s: EditorState) => outputFrame(s.timeline, s.settings).width
+export const selectFrameHeight = (s: EditorState) => outputFrame(s.timeline, s.settings).height
 
 function imageSize(url: string): Promise<{ width: number; height: number }> {
   return new Promise((resolve, reject) => {

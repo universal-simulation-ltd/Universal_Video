@@ -34,11 +34,20 @@ export default function Honesty() {
           between them. A clip carries its own sound, so cutting the picture
           cuts the sound at the same instant — they cannot come apart.
         </Row>
+        <Row term="Reframes">
+          Pick the shape the movie is written at — the size it was filmed,
+          1920×1080, 1080×1920, square, or a size you type. Anything that isn’t
+          that shape is <strong className="font-semibold">centred in it and the
+          rest filled black</strong>: an upright phone clip in a 1920×1080 frame
+          keeps all of its picture and gains a black bar down each side.
+        </Row>
         <Row term="Doesn’t edit">
           No filters or colour, no text, titles or watermarks, no speed ramps, no
           keyframes, and no detaching a clip’s audio from its picture. Transitions
           are crossfade and fade to black — the two that are honestly renderable
-          here — and there is no library of wipes behind them.
+          here — and there is no library of wipes behind them. Reframing
+          letterboxes and never crops: there is no zoom-to-fill, and no moving or
+          scaling a clip inside the frame.
         </Row>
         <Row term="Doesn’t record">
           Screen and webcam capture is{' '}

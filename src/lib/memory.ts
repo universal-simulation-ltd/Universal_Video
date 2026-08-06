@@ -20,7 +20,6 @@ import {
   memoryBudget,
   formatBytes,
   formatDuration,
-  targetFrameSize,
   timelineDuration,
   videoBitrate,
   type MaxHeight,
@@ -31,6 +30,7 @@ import {
   type VideoQuality,
   type VideoSettings,
 } from '@unisim/media'
+import { outputFrame } from './frame'
 
 /** Above this share of the budget, warn. Above 1.0, refuse. Same as the package. */
 const TIGHT_AT = 0.6
@@ -61,10 +61,15 @@ export interface TimelinePlan {
  * Clips overlap during a crossfade and can sit after a gap, so summing would be
  * wrong in both directions (the contract says so, and the same reasoning is why
  * this estimate cannot be "add up the estimates for each clip").
+ *
+ * The frame comes from `outputFrame()`, which is also what the player draws and
+ * what the renderer is handed. That is what keeps the refusal honest across a
+ * reframe: telling the user a 480×270 phone clip fits and then encoding it into
+ * a 1920×1080 frame is eight times the pixels and a refusal made too late.
  */
 export function estimateTimelineOutput(timeline: Timeline, settings: VideoSettings): OutputEstimate {
   const seconds = timelineDuration(timeline)
-  const size = targetFrameSize(timeline.width || 1920, timeline.height || 1080, settings.maxHeight)
+  const size = outputFrame(timeline, settings)
   const fps = timeline.fps > 0 ? timeline.fps : 30
   const video = videoBitrate(size.width, size.height, fps, settings.quality)
   const anyAudible = timeline.clips.some((c) => c.audio.enabled)

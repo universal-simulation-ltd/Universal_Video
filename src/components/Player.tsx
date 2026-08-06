@@ -3,7 +3,16 @@ import { timelineDuration } from '@unisim/media'
 import { audioAt, fitInside, layersAt } from '../lib/compose'
 import { PLAYER_MAX_W } from '../lib/layout'
 import { timecode } from '../lib/timecode'
-import { useEditorStore } from '../stores/editorStore'
+import { selectFrameHeight, selectFrameWidth, useEditorStore } from '../stores/editorStore'
+
+/**
+ * The canvas's backing store, in pixels across.
+ *
+ * Fixed, so the DISPLAYED width never changes with the output frame — the
+ * timeline is laid out to the same box and the needle would stop lining up if
+ * the picture narrowed. The frame's aspect sets the height instead.
+ */
+const PREVIEW_W = 640
 
 /**
  * The picture, at the playhead.
@@ -17,6 +26,14 @@ import { useEditorStore } from '../stores/editorStore'
  * The media elements live in the DOM (one per source) rather than being created
  * per draw, because a `<video>` that has to be re-created every frame can never
  * be seeked ahead of the frame that needs it.
+ *
+ * ⚠️ **The canvas IS the output frame.** It is sized to the exported frame's
+ * aspect and every layer is drawn through `fitInside()` — the same *contain*
+ * the renderer's `drawContained()` uses — so a source of a differing shape is
+ * centred with black down the sides or across the top, exactly as it will be in
+ * the file. That equality is the whole point of the reframe control: if the
+ * preview and the export disagree about the bars, the preview is lying, and the
+ * user finds out after the encode instead of before it.
  */
 export default function Player() {
   const timeline = useEditorStore((s) => s.timeline)
@@ -38,8 +55,13 @@ export default function Player() {
   timelineRef.current = timeline
   playingRef.current = playing
 
+  // The EXPORTED frame, not the timeline's raw one: the resolution cap scales
+  // it, and the preview has to show the shape that will really come out.
+  const frameWidth = useEditorStore(selectFrameWidth)
+  const frameHeight = useEditorStore(selectFrameHeight)
+
   const duration = timelineDuration(timeline)
-  const aspect = timeline.width > 0 ? timeline.width / timeline.height : 16 / 9
+  const aspect = frameWidth > 0 && frameHeight > 0 ? frameWidth / frameHeight : 16 / 9
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -149,9 +171,10 @@ export default function Player() {
       <div className="mx-auto w-full" style={{ maxWidth: PLAYER_MAX_W }}>
         <canvas
           ref={canvasRef}
-          width={640}
-          height={Math.round(640 / (aspect || 16 / 9))}
+          width={PREVIEW_W}
+          height={Math.max(2, Math.round(PREVIEW_W / (aspect || 16 / 9)))}
           data-testid="preview"
+          data-frame={`${frameWidth}x${frameHeight}`}
           aria-label="Preview of the edit"
           className="w-full rounded-xl bg-black"
         />

@@ -1,18 +1,16 @@
 # Universal Video — handover
 
-**State: v2 — the app is now a MULTI-TRACK EDITOR. It builds, lints, passes 87
-unit tests and 12 Playwright specs driven headlessly against a real MP4. Not
-deployed. Local commits only.**
+**State: v2 — a MULTI-TRACK EDITOR with a chosen output frame. It builds, lints,
+passes 121 unit tests and 16 Playwright specs driven headlessly against real
+MP4s. Not deployed. Local commits only.**
 
-**One thing blocks a full export: `renderTimeline()` does not exist in
-`@unisim/media` yet** (0.2.0 is the timeline *contract*, types only, and a
-separate session is writing the renderer against it). A timeline holding one
-whole clip still exports today through the v1 `convertVideo()` path; anything
-with two clips, a transition, a card or a gain change refuses in a sentence.
-See §8.
+`renderTimeline()` landed in `@unisim/media` **0.3.1** and this app calls it, so
+a full multi-clip export works — §8.4's "blocked" note is closed. A single whole
+clip in its own frame still takes the fast v1 `convertVideo()` path; everything
+else, **including any reframe**, goes to the renderer (§9).
 
 Written 2026-08-06. §§1–7 are the session that built v1 — still true except
-where §8 says otherwise; §8 is the editor.
+where §8 says otherwise; §8 is the editor; §9 is the output frame.
 
 ---
 
@@ -440,3 +438,116 @@ work, but no device has touched it).
 - **The pure functions are the specification.** If an interaction feels wrong,
   fix it in `lib/edit.ts` with a test, not in the component — the component is
   the only part with no way to prove itself.
+
+## 9. The output frame — reframing, letterbox only
+
+Written 2026-08-06. The owner's brief, verbatim: *"I want to be able to reframe a
+video e.g. a portrait video to reframe to 1920 x 1080 — it keeps the video in the
+centre and fills black on the sides."*
+
+**Most of it already existed and was not rebuilt.** `renderTimeline()` has always
+letterboxed a source whose aspect differs from `Timeline.width × height` —
+*contain*, not *cover* (`drawContained()`), deliberately, so nothing is cropped —
+and `Timeline` has always carried the frame. What was missing was the **control**:
+nothing let the user set the frame independently of the source, so a portrait
+source could only ever produce a portrait movie.
+
+### 9.1 What was built
+
+| File | What it owns |
+|---|---|
+| `src/lib/frame.ts` | **New.** The presets, `evenEdge`/`customEdge`, `naturalFrame`, `applyFrame`, `letterbox()`, and **`outputFrame()` — the one definition of the exported frame size.** |
+| `src/lib/frame.test.ts` | **New.** 21 tests: the bars, the evenness, the cap composing with the frame, and the budget moving when the frame does. |
+
+The control is a select plus two number fields in **`ExportPanel`**, above
+Resolution — the frame is a property of the *movie*, so it sits with the output
+settings and not in the clip inspector. Presets: **Match the source** (the
+default, and today's behaviour), **1920×1080**, **1080×1920**, **1080×1080**, and
+**Custom…**.
+
+### 9.2 The four things that keep it honest
+
+1. **`outputFrame()` is read by everything.** The player sizes its canvas from
+   it, `estimateTimelineOutput()` predicts from it, and `render.ts` hands it to
+   `renderTimeline()`. The preview cannot drift from the file because there is
+   nowhere for a second answer to live. The bars themselves come from
+   `fitInside()` in `compose.ts`, which is the same *contain* the renderer uses.
+2. **⚠️ A reframe forces the RENDER route.** `convertVideo()` scales the source's
+   own frame to a height; it has no frame to compose into and cannot letterbox.
+   `exportRoute()` therefore returns `'render'` whenever the clip's source shape
+   differs from the timeline's frame. Relaxing that would produce a file the
+   source's shape with the reframe silently dropped — the exact failure this
+   feature invites. Tested in `render.test.ts`, in shouting capitals.
+3. **⚠️ Both edges are always even.** `checkTimeline()` refuses an odd width or
+   height *before it starts* (H.264 codes in 16×16 macroblocks). Every number out
+   of `frame.ts` has been through `evenEdge()` or `targetFrameSize()`, the custom
+   fields round on commit rather than per keystroke (rounding as you type turns
+   the "1" of 1920 into "2"), and a source whose *own* dimensions are odd is
+   evened too — which quietly fixes an export that would previously have been
+   refused. There is a Playwright spec that types `1281 × 719` and gets
+   `1282 × 720`.
+4. **The budget is re-planned the moment the frame changes.** `reflow()` in the
+   store stamps the frame on first, then re-runs `planTimelineExport()`.
+   Reframing a 480×270 clip to 1920×1080 is sixteen times the pixels, and the
+   refusal has to arrive while the user can still change it.
+
+### 9.3 What this deliberately is not
+
+**Letterbox/pillarbox only.** No crop, no zoom-to-fill, no per-clip pan or scale.
+`UNISIM_Compare`'s entry for this app states in print that there is no per-clip
+transform, so adding one quietly would make a published claim false. If a fill
+mode is ever wanted it is a separate decision, not an implementation detail —
+and it would need the preview, the renderer and that table changed together.
+
+The `Honesty` panel and the README both grew a **Reframes** row and an explicit
+"no crop / no zoom-to-fill" row, because both lists claim to be complete.
+
+### 9.4 A bug this closed on the way past
+
+**`renderTimeline()` ignores `maxHeight` — it encodes at exactly
+`timeline.width × height`.** `TimelineRenderSettings` carries quality and audio
+bitrate and nothing else, while the resolution cap lives in `VideoSettings`,
+which that route never passed on. So before this session, picking "720p" on a
+**multi-clip** edit changed the estimate on the button and *not the file*.
+`renderWholeTimeline()` now resolves the frame through `outputFrame()` and hands
+the scaled timeline over, so the prediction and the file agree again.
+
+That is the one thing here that arguably belongs in `@unisim/media` instead —
+either `TimelineRenderSettings` should take `maxHeight`, or the contract should
+say out loud that the frame on the timeline is final and the cap is the caller's
+job. **Reported, not changed:** the package was deliberately not edited.
+
+### 9.5 Driven live, in Chromium, with real numbers
+
+`e2e/fixtures/portrait-270x480.mp4` is **new** — 2 s of 270×480 H.264 + AAC, a
+solid red fill with a moving white marker, made the same way the 480×270 fixture
+was (Chromium's own encoder, this package's muxer; there is no ffmpeg here). It
+exists because **the assertion cannot be made with a 16:9 source at all**: a
+480×270 clip in a 1920×1080 frame is the same shape and grows no bars, so it
+could not tell a letterbox from a stretch.
+
+The spec drops it, picks **1920×1080**, and asserts:
+
+- the preview canvas reports `data-frame="1920x1080"` and is 16:9, with its 3%
+  and 97% columns black (`r < 24`) and its centre lit — *before* anything runs;
+- the timeline surface is still exactly the canvas's width and x (±1 px), Fit is
+  still Fit, and the needle at 0 s / 1 s / 2 s is within 1 px of
+  `canvas.x + (t/duration) × canvas.width`;
+- the **exported file**, read back through `<video>` and sampled on a canvas, is
+  `1920 × 1080` and at 1.0 s reads **black at x = 64, x = 600 and x = 1856**
+  (max channel < 24) and **red at x = 960** (`r > 120`, and `r > g + 40`).
+
+Those x positions are the arithmetic, not guesses: 270×480 contained in
+1920×1080 is drawn 607.5 px wide and centred, so the picture runs x ≈ 656–1264.
+**A dimension assertion alone would have passed on a stretched frame; x = 600
+being black is what proves it was letterboxed.**
+
+### 9.6 Left over
+
+- **A tall preview.** The picture box is still `PLAYER_MAX_W` wide whatever the
+  frame, so a 9:16 output draws a ~1280 px-tall canvas. That is not new — it is
+  what dropping a phone video has always done — and it was left alone on purpose:
+  the timeline is laid out to the same box, and capping the height would narrow
+  the picture and take the needle out of line with it. If it is ever fixed, the
+  timeline viewport has to move with it, and the alignment spec is the check.
+- **No fill mode.** See §9.3. Report it as a request; don't add it quietly.

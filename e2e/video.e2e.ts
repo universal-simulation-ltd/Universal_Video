@@ -18,6 +18,15 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const FIXTURE = join(HERE, 'fixtures', 'clip-480x270.mp4')
 const FIXTURE_BYTES = readFileSync(FIXTURE)
 
+// `fixtures/portrait-270x480.mp4` is the same thing stood on its end: 2 seconds
+// of 270×480 H.264 + AAC, a solid red fill with a moving white marker, made the
+// same way and for the same reason. It exists because the reframe assertion
+// cannot be made with a 16:9 source at all — a 480×270 clip put into a 1920×1080
+// frame is the same shape and grows no bars, so it could not tell a letterbox
+// from a stretch. A portrait source in a landscape frame can.
+const PORTRAIT = join(HERE, 'fixtures', 'portrait-270x480.mp4')
+const PORTRAIT_BYTES = readFileSync(PORTRAIT)
+
 async function drop(page: Page, name: string, buffer: Buffer) {
   await page.locator('input[type=file]').first().setInputFiles({ name, mimeType: 'video/mp4', buffer })
 }
@@ -72,6 +81,87 @@ async function readBackExport(page: Page) {
       audioDuration,
     }
   })
+}
+
+/**
+ * Save the export, decode a frame of it, and read individual PIXELS back out.
+ *
+ * A dimension assertion alone cannot tell a letterbox from a stretch: a portrait
+ * clip squashed sideways to fill 1920×1080 has exactly the same `videoWidth`
+ * and `videoHeight` as one centred with black bars. Only the colour of a pixel
+ * near the edge can, so that is what this reads — through the BROWSER's own
+ * decoder, not ours.
+ */
+async function readBackPixels(page: Page, atSec: number, points: [number, number][]) {
+  return page.evaluate(
+    async ({ atSec, points }) => {
+      const captured: Blob[] = []
+      const real = URL.createObjectURL
+      URL.createObjectURL = (obj: Blob | MediaSource) => {
+        if (obj instanceof Blob) captured.push(obj)
+        return real.call(URL, obj)
+      }
+      const save = [...document.querySelectorAll('button')].find((b) => /^Save /.test(b.textContent ?? ''))
+      save?.click()
+      await new Promise((r) => setTimeout(r, 300))
+      URL.createObjectURL = real
+
+      const blob = captured[captured.length - 1]
+      const video = document.createElement('video')
+      video.muted = true
+      video.src = real.call(URL, blob)
+      await new Promise<void>((resolve, reject) => {
+        video.onloadedmetadata = () => resolve()
+        video.onerror = () => reject(new Error('the browser refused the file we wrote'))
+        setTimeout(() => reject(new Error('timed out loading the result')), 30_000)
+      })
+      // Seeking forces a real decode of a frame in the middle of the file, which
+      // `loadedmetadata` alone does not.
+      await new Promise<void>((resolve, reject) => {
+        video.onseeked = () => resolve()
+        setTimeout(() => reject(new Error('seek timed out')), 20_000)
+        video.currentTime = atSec
+      })
+
+      const canvas = document.createElement('canvas')
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(video, 0, 0)
+
+      return {
+        size: blob.size,
+        duration: video.duration,
+        width: video.videoWidth,
+        height: video.videoHeight,
+        samples: points.map(([x, y]) => {
+          const d = ctx.getImageData(x, y, 1, 1).data
+          return { x, y, r: d[0], g: d[1], b: d[2] }
+        }),
+      }
+    },
+    { atSec, points },
+  )
+}
+
+/** The preview canvas, sampled the same way the exported file is. */
+async function previewPixels(page: Page, points: [number, number][]) {
+  return page.evaluate((points) => {
+    const canvas = document.querySelector('[data-testid=preview]') as HTMLCanvasElement
+    const ctx = canvas.getContext('2d')!
+    return {
+      width: canvas.width,
+      height: canvas.height,
+      samples: points.map(([fx, fy]) => {
+        // Fractions of the frame, so the same point can be read out of a 640-wide
+        // preview and a 1920-wide export.
+        const x = Math.round(fx * (canvas.width - 1))
+        const y = Math.round(fy * (canvas.height - 1))
+        const d = ctx.getImageData(x, y, 1, 1).data
+        return { x, y, r: d[0], g: d[1], b: d[2] }
+      }),
+    }
+  }, points)
 }
 
 async function clips(page: Page) {
@@ -488,6 +578,128 @@ test.describe('Universal Video', () => {
     // because the muxer writes no edit list, and that is a known, measured
     // offset rather than drift.
     expect(Math.abs(result.duration - result.audioDuration)).toBeLessThan(0.1)
+  })
+
+  test('reframes a portrait video to 1920×1080 with black down BOTH sides', async ({ page }) => {
+    // The owner's ask, mechanised: *"I want to be able to reframe a video e.g. a
+    // portrait video to reframe to 1920 x 1080 — it keeps the video in the
+    // centre and fills black on the sides."*
+    //
+    // The proof has to be a PIXEL. A 270×480 clip stretched sideways to fill
+    // 1920×1080 produces a file with exactly the same dimensions as one centred
+    // in it, so `videoWidth === 1920` says nothing about whether the reframe
+    // letterboxed or distorted. The bar is where the difference lives.
+    await page.goto('/')
+    await drop(page, 'portrait.mp4', PORTRAIT_BYTES)
+    await expect(page.getByText(/270×480 · 0:02 · 30 fps/)).toBeVisible()
+
+    // Left alone, the movie is still the shape of what was dropped.
+    await expect(page.getByRole('button', { name: /Compress this video/ })).toContainText('270×480')
+    await expect(page.locator('[data-testid=preview]')).toHaveAttribute('data-frame', '270x480')
+
+    await page.getByLabel('Output frame').selectOption('landscape')
+
+    // The prediction moves the moment the frame does — before anything runs.
+    await expect(page.locator('[data-testid=preview]')).toHaveAttribute('data-frame', '1920x1080')
+    const button = page.getByRole('button', { name: /Export this edit|Compress this video/ })
+    await expect(button).toContainText('1920×1080')
+    await expect(button).toBeEnabled()
+
+    // ── The timeline still lines up with the picture ───────────────────────
+    // The frame just changed shape, and the timeline is laid out to the
+    // player's frame. The needle has to still be under the frame it names.
+    const canvas = (await page.locator('[data-testid=preview]').boundingBox())!
+    const surface = (await page.locator('[data-testid=timeline-surface]').boundingBox())!
+    expect(Math.abs(surface.width - canvas.width)).toBeLessThan(1)
+    expect(Math.abs(surface.x - canvas.x)).toBeLessThan(1)
+    await expect(page.locator('[data-testid=zoom-level]')).toHaveText('Fit')
+    const duration = await page.evaluate(
+      () => Number(document.querySelector('[data-testid=clip]')!.getAttribute('data-end')),
+    )
+    for (const t of [0, 1, duration]) {
+      await page.getByLabel('Playhead').fill(String(t))
+      const needle = (await page.locator('[data-testid=playhead]').boundingBox())!
+      expect(Math.abs(needle.x - (canvas.x + (t / duration) * canvas.width))).toBeLessThan(1)
+    }
+
+    // ── The PREVIEW letterboxes, before anything is encoded ────────────────
+    await page.getByLabel('Playhead').fill('1')
+    await expect
+      .poll(
+        async () => (await previewPixels(page, [[0.5, 0.5]])).samples[0].r,
+        { timeout: 15_000, message: 'the preview never showed a decoded frame' },
+      )
+      .toBeGreaterThan(60)
+    const preview = await previewPixels(page, [[0.03, 0.5], [0.5, 0.5], [0.97, 0.5]])
+    // 640 across at 16:9 — the canvas IS the output frame's shape.
+    expect(preview.width / preview.height).toBeCloseTo(16 / 9, 2)
+    expect(preview.samples[0].r).toBeLessThan(24) // left bar
+    expect(preview.samples[2].r).toBeLessThan(24) // right bar
+    expect(preview.samples[1].r).toBeGreaterThan(60) // picture
+
+    // ── And so does the FILE ───────────────────────────────────────────────
+    await page.getByRole('button', { name: /Export this edit|Compress this video/ }).click()
+    await expect(page.getByRole('button', { name: /^Save / })).toBeVisible({ timeout: 180_000 })
+
+    // A 270×480 source contained in 1920×1080 is drawn 607.5 px wide and
+    // centred, so the picture runs from x≈656 to x≈1264 and everything outside
+    // that is black. These four points are chosen from that arithmetic.
+    const result = await readBackPixels(page, 1, [
+      [64, 540], // deep in the left bar
+      [600, 540], // still bar, 56 px short of the picture's edge
+      [960, 540], // the middle of the picture
+      [1856, 540], // deep in the right bar
+    ])
+
+    expect(result.width).toBe(1920)
+    expect(result.height).toBe(1080)
+    expect(result.duration).toBeGreaterThan(1.8)
+
+    const [farLeft, nearLeft, middle, farRight] = result.samples
+    const lit = (s: { r: number; g: number; b: number }) => Math.max(s.r, s.g, s.b)
+    // Black at the sides. If the picture had been stretched to fill the frame
+    // instead of centred in it, every one of these would be red.
+    expect(lit(farLeft)).toBeLessThan(24)
+    expect(lit(nearLeft)).toBeLessThan(24)
+    expect(lit(farRight)).toBeLessThan(24)
+    // …and the picture really is in the middle, not merely absent everywhere.
+    expect(middle.r).toBeGreaterThan(120)
+    expect(middle.r).toBeGreaterThan(middle.g + 40)
+  })
+
+  test('a custom frame cannot be given an odd edge', async ({ page }) => {
+    // The renderer refuses an odd width or height up front — H.264 codes in
+    // 16×16 macroblocks — so the control must not be able to reach that
+    // refusal. Typing an odd number is the obvious way to try.
+    await page.goto('/')
+    await drop(page, 'clip.mp4', FIXTURE_BYTES)
+
+    await page.getByLabel('Output frame').selectOption('custom')
+    await page.getByLabel('Frame width').fill('1281')
+    await page.getByLabel('Frame height').fill('719')
+    await page.getByLabel('Frame height').blur()
+
+    await expect(page.getByLabel('Frame width')).toHaveValue('1282')
+    await expect(page.getByLabel('Frame height')).toHaveValue('720')
+    await expect(page.locator('[data-testid=preview]')).toHaveAttribute('data-frame', '1282x720')
+
+    // Too small lands on the floor rather than on the renderer…
+    await page.getByLabel('Frame width').fill('3')
+    await page.getByLabel('Frame width').blur()
+    await expect(page.getByLabel('Frame width')).toHaveValue('16')
+
+    // …and clearing the box to retype it puts back what was there, rather than
+    // silently reframing the movie to nothing.
+    await page.getByLabel('Frame width').fill('')
+    await page.getByLabel('Frame width').blur()
+    await expect(page.getByLabel('Frame width')).toHaveValue('16')
+
+    // The prediction — and therefore the memory refusal — follows the frame.
+    await page.getByLabel('Frame width').fill('3840')
+    await page.getByLabel('Frame height').fill('2160')
+    await page.getByLabel('Frame height').blur()
+    await expect(page.getByRole('button', { name: /Export this edit|Compress this video/ }))
+      .toContainText('3840×2160')
   })
 
   test('refuses a format it cannot read, by name, before doing any work', async ({ page }) => {

@@ -1,5 +1,14 @@
+import { useEffect, useState } from 'react'
 import { formatBytes, formatDuration, timelineDuration, type MaxHeight, type VideoQuality } from '@unisim/media'
-import { selectRoute, useEditorStore } from '../stores/editorStore'
+import {
+  FRAME_PRESETS,
+  MAX_FRAME_EDGE,
+  MIN_CUSTOM_EDGE,
+  customEdge,
+  describeFrame,
+  naturalFrame,
+} from '../lib/frame'
+import { selectFrameHeight, selectFrameWidth, selectRoute, useEditorStore } from '../stores/editorStore'
 
 const HEIGHTS: { value: MaxHeight; label: string }[] = [
   { value: 'source', label: 'Keep original size' },
@@ -43,6 +52,15 @@ export default function ExportPanel() {
   const clips = useEditorStore((s) => s.timeline.clips.length)
   const sourceBytes = useEditorStore((s) => s.plan?.sourceBytes ?? 0)
   const duration = useEditorStore((s) => timelineDuration(s.timeline))
+  const frame = useEditorStore((s) => s.frame)
+  const setFramePreset = useEditorStore((s) => s.setFramePreset)
+  const setCustomFrame = useEditorStore((s) => s.setCustomFrame)
+  // Derived outside the selector: `naturalFrame` builds a fresh object, and a
+  // selector with no stable identity re-renders on every store touch.
+  const timeline = useEditorStore((s) => s.timeline)
+  const natural = naturalFrame(timeline)
+  const frameWidth = useEditorStore(selectFrameWidth)
+  const frameHeight = useEditorStore(selectFrameHeight)
 
   if (!plan) return null
 
@@ -55,6 +73,53 @@ export default function ExportPanel() {
   return (
     <div className="space-y-3">
       <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+        {/* The shape of the MOVIE, so it belongs with the output settings and
+            not in the clip inspector — a frame is not a property of a clip. */}
+        <Field label="Output frame">
+          <select
+            value={frame.preset}
+            disabled={busy}
+            aria-label="Output frame"
+            onChange={(e) => setFramePreset(e.target.value as typeof frame.preset)}
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+          >
+            {FRAME_PRESETS.map((preset) => (
+              <option key={preset.id} value={preset.id}>
+                {preset.id === 'source' && natural.width > 0
+                  ? `${preset.label} — ${describeFrame(natural)}`
+                  : preset.label}
+              </option>
+            ))}
+          </select>
+
+          {frame.preset === 'custom' && (
+            <div className="flex items-center gap-2">
+              <EvenSizeField
+                label="Frame width"
+                value={frame.custom.width}
+                disabled={busy}
+                onCommit={(width) => setCustomFrame({ width })}
+              />
+              <span className="text-[12px] text-slate-400">×</span>
+              <EvenSizeField
+                label="Frame height"
+                value={frame.custom.height}
+                disabled={busy}
+                onCommit={(height) => setCustomFrame({ height })}
+              />
+            </div>
+          )}
+
+          <p className="text-[11px] leading-relaxed text-slate-400 dark:text-slate-500">
+            The movie is written at {frameWidth}×{frameHeight}. Anything that isn’t this shape is
+            centred in it and the rest filled black — nothing is cropped and nothing is stretched.
+            {frame.preset === 'custom' &&
+              ` Both edges are rounded to even numbers, from ${MIN_CUSTOM_EDGE} to ${MAX_FRAME_EDGE}, because H.264 codes in 16×16 macroblocks.`}
+          </p>
+        </Field>
+
+        <hr className="border-slate-100 dark:border-slate-800" />
+
         <Field label="How small">
           <div className="grid grid-cols-3 gap-1.5">
             {QUALITIES.map((q) => (
@@ -185,7 +250,10 @@ export default function ExportPanel() {
             ? 'Can’t compress this here'
             : route === 'compress'
               ? 'Compress this video'
-              : `Export this edit — ${clips} clips`}
+              // One clip can reach this now: a reframe is a letterbox, and only
+              // the renderer can letterbox, so "1 clips" became reachable the
+              // moment the frame control shipped.
+              : `Export this edit — ${clips} clip${clips === 1 ? '' : 's'}`}
         </span>
         <span className="mt-0.5 block text-[12px] tabular-nums opacity-90">
           {/* The estimate lives ON the button, because a number the user has to
@@ -197,6 +265,69 @@ export default function ExportPanel() {
         </span>
       </button>
     </div>
+  )
+}
+
+/**
+ * A width or a height for the custom frame.
+ *
+ * ⚠️ **An odd number must be unreachable.** `checkTimeline()` in `@unisim/media`
+ * refuses an odd edge before it starts, so a field that could produce one is a
+ * field that walks the user into a refusal at the moment they press Export.
+ * Rounding is done on COMMIT rather than per keystroke, though: rounding as you
+ * type turns "1" — the first character of 1920 — into "2" and makes the box
+ * impossible to type into. So the draft is free text, blur or Enter commits it
+ * through `customEdge()`, and the box then shows the even number that was
+ * actually taken rather than what was typed.
+ */
+function EvenSizeField({
+  label,
+  value,
+  disabled,
+  onCommit,
+}: {
+  label: string
+  value: number
+  disabled: boolean
+  onCommit: (value: number) => void
+}) {
+  const [draft, setDraft] = useState(String(value))
+
+  // The store is the truth: a value changed anywhere else (a reset, a preset
+  // switch, or the rounding above) has to show up here.
+  useEffect(() => setDraft(String(value)), [value])
+
+  const commit = () => {
+    const parsed = Number(draft)
+    // An empty box, or something that isn't a positive number, puts the last
+    // good value back rather than clamping — clearing a field to retype it is
+    // the commonest thing anyone does to one, and answering that with "16" is
+    // an edit the user did not ask for. Everything else goes through
+    // `customEdge()`, which is where the even-number guarantee lives.
+    const next = draft.trim() !== '' && Number.isFinite(parsed) && parsed > 0 ? customEdge(parsed) : value
+    setDraft(String(next))
+    onCommit(next)
+  }
+
+  return (
+    <input
+      type="number"
+      min={MIN_CUSTOM_EDGE}
+      max={MAX_FRAME_EDGE}
+      step={2}
+      value={draft}
+      disabled={disabled}
+      aria-label={label}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          commit()
+        }
+      }}
+      className="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[12px] tabular-nums text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+    />
   )
 }
 
