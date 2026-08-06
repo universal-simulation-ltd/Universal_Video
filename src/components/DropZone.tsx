@@ -1,17 +1,18 @@
 import { useRef, useState } from 'react'
-import { VIDEO_ACCEPT } from '@unisim/media'
-import { useVideoStore } from '../stores/videoStore'
+import { EDITOR_ACCEPT, useEditorStore } from '../stores/editorStore'
 
-// The first screen. Its only job is to say what this is and take a file.
+// The first screen, and the only one that isn't the editor. Its job is to say
+// what this is and take some files — one is the whole compress path, several is
+// an edit, and the app does not ask which you meant.
 export default function DropZone() {
-  const chooseFile = useVideoStore((s) => s.chooseFile)
-  const supported = useVideoStore((s) => s.supported)
+  const addFiles = useEditorStore((s) => s.addFiles)
+  const supported = useEditorStore((s) => s.supported)
   const input = useRef<HTMLInputElement>(null)
   const [over, setOver] = useState(false)
 
   function take(files: FileList | null) {
-    const file = files?.[0]
-    if (file) void chooseFile(file)
+    const list = [...(files ?? [])]
+    if (list.length) void addFiles(list)
   }
 
   return (
@@ -28,7 +29,8 @@ export default function DropZone() {
       <input
         ref={input}
         type="file"
-        accept={VIDEO_ACCEPT}
+        accept={EDITOR_ACCEPT}
+        multiple
         className="sr-only"
         onChange={(e) => take(e.target.files)}
       />
@@ -49,8 +51,9 @@ export default function DropZone() {
       </p>
 
       <p className="mt-5 text-xs text-slate-500 dark:text-slate-400">
-        It is opened in this tab. Nothing is uploaded, and there is no size cap,
-        no account, no watermark and no queue.
+        It opens in this tab, with a player and a timeline under it. Drop several
+        and they line up one after another. Nothing is uploaded, and there is no
+        size cap, no account, no watermark and no queue.
       </p>
 
       {supported === false && (
@@ -58,8 +61,8 @@ export default function DropZone() {
           <strong className="font-semibold">This browser can’t do the encoding.</strong>{' '}
           Compressing to MP4 needs a WebCodecs H.264 <em>encoder</em>, and this
           browser doesn’t have one — Firefox is the usual case. Chrome, Edge and
-          Safari 16.4+ do. You can still drop a file to see what it contains, but
-          the conversion will not run.
+          Safari 16.4+ do. You can still drop a file and edit it here, but the
+          export will not run.
         </p>
       )}
     </div>

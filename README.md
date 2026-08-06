@@ -37,17 +37,23 @@ decisions, not oversights — see [Don't](#dont) at the bottom.
 
 ## What it deliberately cannot do
 
-These are on the page in the app itself, not just here. The rule they come from:
-*one input file, one output file, one setting applied to the whole file, and no
-time axis beyond a single in/out pair.* Anything needing a second input, a second
-region of time, or a canvas you draw on is an **editor**, and this is not one.
+These are on the page in the app itself, not just here.
+
+⚠️ **The rule this list used to come from is gone.** It read: *one input file,
+one output file, one setting applied to the whole file, and no time axis beyond a
+single in/out pair — anything needing a second input is an editor, and this is
+not one.* It **is** an editor now: a player, a timeline, several sources, cuts,
+stacked video tracks, intro/outro cards and transitions. Compressing one file is
+simply the case where the timeline has one clip on it, and that path is still one
+drag and one click. What has **not** changed is everything below.
 
 | | |
 |---|---|
 | **Read MKV, WebM, AVI or WMV** | ❌ No. MKV and WebM need a Matroska/EBML reader (a real piece of work, and the top of the backlog). AVI and WMV are refused **permanently** — the browser cannot decode MPEG-4 ASP or WMV3, so a reader would buy a different error message, not a working conversion. |
 | **Read fragmented MP4** | ❌ Not yet. Common from screen recorders and some phone apps, so the refusal fires more often than its rarity suggests. It is detected on drop and named, not parsed half-way. |
 | **Write WebM / VP9** | ❌ Not yet — and this is the highest-value gap, because it is also what would make **Firefox** a supported browser. WebCodecs already has the VP9 encoder; only the container is missing. |
-| **Edit** | ❌ No timeline, no joining, no filters, no burnt-in text, no speed ramps. *"Make this file smaller or different"* — not *"make this a different video."* |
+| **Edit** | ✅ Trim, cut at the playhead, delete, slide clips along and between tracks, stack them (two clips slid over each other add a track rather than overwriting), intro/outro cards from an image or a video, and crossfade / fade-to-black between clips. **A clip carries its own audio**, so a cut splits picture and sound at the same instant by construction — see [`timeline.ts`](https://github.com/universal-simulation-ltd/universal-platform/blob/main/packages/media/src/timeline.ts), the contract this editor and the renderer share. |
+| **Filters, text, speed ramps, detached audio** | ❌ No colour work, no titles or watermarks, no speed changes, and no separating a clip's sound from its picture. Transitions are crossfade and fade to black only. |
 | **Record** | ❌ That is **[Universal Recorder](https://opensource.unisim.co.uk/recorder)**. Adjacent products should not grow into each other. |
 | **Fall back to a server for big files** | ⛔ **Never.** One *"we'll process the big ones on our server"* button would make every other sentence on the page false, and it would be discovered in five seconds by anyone with devtools open. If a hosted path ever exists it is a separate, explicitly-labelled product. |
 | **Run in Firefox** | ❌ Firefox has no WebCodecs H.264 **encoder**. It is probed on arrival and said plainly, rather than failing after a long wait. Chrome, Edge and Safari 16.4+ are fine. |

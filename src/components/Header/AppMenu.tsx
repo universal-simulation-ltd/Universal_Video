@@ -1,4 +1,4 @@
-import { useVideoStore } from '../../stores/videoStore'
+import { useEditorStore } from '../../stores/editorStore'
 import { useThemeStore, type ThemePref } from '../../stores/themeStore'
 
 // The per-app rows that slot into <UniversalAppsNavBar />'s `actions` prop —
@@ -21,19 +21,19 @@ const THEMES: { pref: ThemePref; label: string; glyph: string }[] = [
 ]
 
 export default function AppMenu() {
-  const reset = useVideoStore((s) => s.reset)
-  const phase = useVideoStore((s) => s.phase)
+  const reset = useEditorStore((s) => s.reset)
+  const status = useEditorStore((s) => s.status)
   const pref = useThemeStore((s) => s.pref)
   const setPref = useThemeStore((s) => s.setPref)
 
   return (
     <>
-      <MenuLabel>This video</MenuLabel>
+      <MenuLabel>This edit</MenuLabel>
       <MenuRow
         glyph="🗑️"
         label="Start again"
         onClick={reset}
-        disabled={phase === 'idle' || phase === 'running'}
+        disabled={status === 'empty' || status === 'exporting'}
       />
       <MenuLabel>Appearance</MenuLabel>
       {THEMES.map((t) => (

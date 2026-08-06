@@ -3,9 +3,10 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
-// The end-to-end proof. A compressor that compiles proves nothing, so this puts
-// a REAL H.264 MP4 through the REAL app in a REAL browser and then asks the
-// browser's own demuxer whether what came out is a video.
+// The end-to-end proof. An editor that compiles proves nothing, so this drives
+// the REAL app in a REAL browser with a REAL H.264 MP4: it plays it, cuts it,
+// drags it onto a second track, and then asks the browser's own demuxer whether
+// what comes out is a video.
 //
 // `fixtures/clip-480x270.mp4` is 2 seconds of 480×270 at ~1.5 Mbps, produced by
 // Chromium's own VideoEncoder and muxed by @unisim/media — i.e. by the same
@@ -18,7 +19,31 @@ const FIXTURE = join(HERE, 'fixtures', 'clip-480x270.mp4')
 const FIXTURE_BYTES = readFileSync(FIXTURE)
 
 async function drop(page: Page, name: string, buffer: Buffer) {
-  await page.locator('input[type=file]').setInputFiles({ name, mimeType: 'video/mp4', buffer })
+  await page.locator('input[type=file]').first().setInputFiles({ name, mimeType: 'video/mp4', buffer })
+}
+
+/** The clip rectangles on the timeline, as the DOM reports them. */
+async function clips(page: Page) {
+  return page.locator('[data-testid=clip]').evaluateAll((nodes) =>
+    nodes.map((n) => ({
+      id: n.getAttribute('data-clip-id')!,
+      track: Number(n.getAttribute('data-track')),
+      start: Number(n.getAttribute('data-start')),
+      end: Number(n.getAttribute('data-end')),
+      inSec: Number(n.getAttribute('data-in')),
+      outSec: Number(n.getAttribute('data-out')),
+      // The audio lane's own words, read out of the lane the user can see —
+      // not out of the model. This is the assertion that would catch picture
+      // and sound drifting apart in the UI even if the model were right.
+      audioLane: n.querySelector('[data-testid=audio-lane]')?.textContent?.trim() ?? '',
+    })),
+  )
+}
+
+/** "sound · 0:01.0–0:02.0" → [1, 2] */
+function audioBounds(lane: string): [number, number] {
+  const times = [...lane.matchAll(/(\d+):(\d+\.\d)/g)].map(([, m, s]) => Number(m) * 60 + Number(s))
+  return [times[0], times[1]]
 }
 
 test.describe('Universal Video', () => {
@@ -62,6 +87,115 @@ test.describe('Universal Video', () => {
     await expect(button).toBeEnabled()
     await expect(button).toContainText(/About \d/)
     await expect(button).toContainText(/% smaller/)
+  })
+
+  test('one dropped file becomes a player and a timeline, and the player shows it', async ({ page }) => {
+    await page.goto('/')
+    await drop(page, 'clip.mp4', FIXTURE_BYTES)
+
+    // One drag gives you the whole editor: preview, ruler, one clip with a
+    // video lane and an audio lane inside one box.
+    await expect(page.locator('[data-testid=preview]')).toBeVisible()
+    await expect(page.locator('[data-testid=timeline]')).toBeVisible()
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(1)
+    await expect(page.locator('[data-testid=clip] [data-testid=video-lane]')).toHaveCount(1)
+    await expect(page.locator('[data-testid=clip] [data-testid=audio-lane]')).toHaveCount(1)
+
+    // Move the playhead into the middle of the clip and let the preview settle.
+    await page.getByLabel('Playhead').fill('1')
+    await expect(page.locator('[data-testid=clock]')).toContainText('0:01.0')
+
+    // The canvas is really showing decoded video, not an empty black box. This
+    // is the difference between "the component rendered" and "the player works".
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(() => {
+            const canvas = document.querySelector('[data-testid=preview]') as HTMLCanvasElement | null
+            const ctx = canvas?.getContext('2d')
+            if (!canvas || !ctx) return 0
+            const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+            let lit = 0
+            for (let i = 0; i < data.length; i += 4) {
+              if (data[i] > 12 || data[i + 1] > 12 || data[i + 2] > 12) lit += 1
+            }
+            return lit
+          }),
+        { timeout: 15_000, message: 'the preview canvas never showed a decoded frame' },
+      )
+      .toBeGreaterThan(1000)
+  })
+
+  test('cutting splits picture AND sound at the same instant, and dragging stacks a track', async ({ page }) => {
+    await page.goto('/')
+    await drop(page, 'clip.mp4', FIXTURE_BYTES)
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(1)
+
+    // ── Cut at the playhead ────────────────────────────────────────────────
+    await page.getByLabel('Playhead').fill('1')
+    await page.getByRole('button', { name: 'Cut at playhead' }).click()
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(2)
+
+    const [left, right] = await clips(page)
+    // The picture boundary.
+    expect(left.end).toBeCloseTo(right.start, 3)
+    expect(left.outSec).toBeCloseTo(right.inSec, 3)
+    // The SOUND boundary, read off the audio lanes the user is looking at. It
+    // is the same instant because there is one `Clip` behind both lanes — this
+    // is the whole reason the contract has no separate audio clip.
+    const [, leftAudioEnd] = audioBounds(left.audioLane)
+    const [rightAudioStart] = audioBounds(right.audioLane)
+    expect(leftAudioEnd).toBeCloseTo(rightAudioStart, 3)
+    expect(leftAudioEnd).toBeCloseTo(left.end, 1)
+
+    // ── Drag the second half back over the first ───────────────────────────
+    // Two videos slid on top of each other stack onto a new track rather than
+    // overwriting each other.
+    expect(left.track).toBe(0)
+    expect(right.track).toBe(0)
+
+    const secondClip = page.locator('[data-testid=clip]').nth(1)
+    const box = (await secondClip.boundingBox())!
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width / 2 - 40, box.y + box.height / 2, { steps: 8 })
+    await page.mouse.up()
+
+    await expect
+      .poll(async () => (await clips(page)).filter((c) => c.track === 1).length, { timeout: 5_000 })
+      .toBe(1)
+    const stacked = await clips(page)
+    expect(stacked).toHaveLength(2)
+    // Nothing was overwritten: both clips are still there, and they now overlap.
+    expect(Math.min(stacked[0].end, stacked[1].end)).toBeGreaterThan(
+      Math.max(stacked[0].start, stacked[1].start),
+    )
+
+    // ── Delete one ─────────────────────────────────────────────────────────
+    await secondClip.click()
+    await page.getByRole('button', { name: 'Delete clip' }).click()
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(1)
+  })
+
+  test('an image becomes an intro card in front of the video', async ({ page }) => {
+    await page.goto('/')
+    await drop(page, 'clip.mp4', FIXTURE_BYTES)
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(1)
+
+    await page.getByLabel('Add intro…').setInputFiles({
+      name: 'title.png',
+      mimeType: 'image/png',
+      buffer: ONE_PIXEL_PNG,
+    })
+
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(2)
+    const [intro, footage] = await clips(page)
+    // The card is 3 s by default and the footage has been pushed behind it.
+    expect(intro.start).toBe(0)
+    expect(intro.end).toBeCloseTo(3, 3)
+    expect(footage.start).toBeCloseTo(3, 3)
+    // A still has no sound, and the lane says so rather than being absent.
+    expect(intro.audioLane).toContain('no sound')
   })
 
   test('compresses a real video, and the browser reads the result back', async ({ page }) => {
@@ -159,14 +293,17 @@ test.describe('Universal Video', () => {
     expect(played.size!).toBeLessThan(FIXTURE_BYTES.length)
   })
 
-  test('trimming and resizing produce a shorter, smaller video', async ({ page }) => {
+  test('a trim typed into the timeline produces a shorter, smaller video', async ({ page }) => {
     await page.goto('/')
     await drop(page, 'clip.mp4', FIXTURE_BYTES)
 
-    await page.getByRole('combobox').selectOption('480')
-    await page.getByLabel(/Trim/).check()
-    await page.getByPlaceholder('0:00').fill('0:00')
-    await page.locator('input[inputmode=numeric]').nth(1).fill('1')
+    await page.getByLabel('Resolution').selectOption('480')
+    // The trim is now the clip itself: pull the out point back to 1 s. This is
+    // the same `trimClip()` the drag handle calls, so typing and dragging
+    // cannot round differently.
+    await page.getByLabel('Out point').fill('1')
+    await page.getByLabel('Out point').blur()
+    await expect(page.locator('[data-testid=clip]')).toHaveAttribute('data-out', '1.000')
 
     await page.getByRole('button', { name: /Compress this video/ }).click()
     await expect(page.getByRole('button', { name: /^Save clip\.mp4$/ })).toBeVisible({ timeout: 60_000 })
@@ -203,11 +340,29 @@ test.describe('Universal Video', () => {
     expect(result.size).toBeLessThan(FIXTURE_BYTES.length / 2)
   })
 
+  test('a multi-clip export says why it can’t run yet instead of failing silently', async ({ page }) => {
+    // ⚠️ TEMPORARY, and deliberately written to flip. `renderTimeline()` is not
+    // in the installed @unisim/media yet, so a two-clip export must refuse in a
+    // sentence rather than throw. When the renderer lands, this test starts
+    // failing — and that failure is the reminder to drive a real multi-clip
+    // export end to end here instead.
+    await page.goto('/')
+    await drop(page, 'clip.mp4', FIXTURE_BYTES)
+    await page.getByLabel('Playhead').fill('1')
+    await page.getByRole('button', { name: 'Cut at playhead' }).click()
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(2)
+
+    await page.getByRole('button', { name: /Export this edit/ }).click()
+    await expect(page.getByText(/does not have it yet/)).toBeVisible({ timeout: 15_000 })
+    // The edit is untouched — nothing was lost by pressing the button.
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(2)
+  })
+
   test('refuses a format it cannot read, by name, before doing any work', async ({ page }) => {
     await page.goto('/')
     // A .mkv is refused on drop rather than half way through a conversion —
     // and the refusal says what DOES work rather than only what doesn't.
-    await page.locator('input[type=file]').setInputFiles({
+    await page.locator('input[type=file]').first().setInputFiles({
       name: 'holiday.mkv', mimeType: 'video/x-matroska', buffer: Buffer.from(FIXTURE_BYTES),
     })
     await expect(page.getByRole('alert')).toContainText('MP4, M4V and MOV')
@@ -247,3 +402,9 @@ test.describe('Universal Video', () => {
     expect(forbidden).toEqual([])
   })
 })
+
+/** A 2×2 red PNG, so the intro-card path has a real image to decode. */
+const ONE_PIXEL_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR4nGP8z8Dwn4GBgYEJRIAAIxUCBQGvUQoAAAAASUVORK5CYII=',
+  'base64',
+)

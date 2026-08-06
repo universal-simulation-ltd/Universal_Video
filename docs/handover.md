@@ -1,11 +1,18 @@
 # Universal Video — handover
 
-**State: v1 is built, compiles, lints, unit-tests, and has been proven working
-end to end in a real browser with a real video. Not deployed. No GitHub remote.
-Local commits only. One thing blocks a deploy: `@unisim/media` is not on npm
-yet — see §5.**
+**State: v2 — the app is now a MULTI-TRACK EDITOR. It builds, lints, passes 87
+unit tests and 12 Playwright specs driven headlessly against a real MP4. Not
+deployed. Local commits only.**
 
-Written 2026-08-06, in the session that built the app.
+**One thing blocks a full export: `renderTimeline()` does not exist in
+`@unisim/media` yet** (0.2.0 is the timeline *contract*, types only, and a
+separate session is writing the renderer against it). A timeline holding one
+whole clip still exports today through the v1 `convertVideo()` path; anything
+with two clips, a transition, a card or a gain change refuses in a sentence.
+See §8.
+
+Written 2026-08-06. §§1–7 are the session that built v1 — still true except
+where §8 says otherwise; §8 is the editor.
 
 ---
 
@@ -170,16 +177,14 @@ removes one of the two. The remaining copy cannot go without streaming to disk.
 
 **In order. Only the first one blocks anything.**
 
-1. **Publish `@unisim/media@0.1.0`, then re-run `npm install` in both consumers
-   and commit the lockfiles.** Nothing can deploy until this is done:
-   `package.json` in both apps asks for `@unisim/media@^0.1.0`, and it is not on
-   npm, so a clean `npm ci` — which is what Cloudflare Pages runs — fails.
-   Locally both apps are wired to a `npm pack` tarball via `npm install --no-save`,
-   which is why they build here.
-   ⚠️ `auto-release.yml` watches **`packages/sdk/package.json` alone**, so this
-   package has **no release path**. Either extend that workflow with a matrix or
-   adopt changesets — and per the standing rule, never `npm publish` by hand while
-   an auto-release run could be in flight.
+1. ~~**Publish `@unisim/media@0.1.0`…**~~ **DONE.** 0.1.0 and 0.2.0 are both on
+   npm, and this repo's lockfile resolves `@unisim/media@0.2.0` from
+   `registry.npmjs.org` rather than a local tarball, so a clean `npm ci` works.
+   The editor needs **0.2.0 or newer** — 0.1.0 has no `timeline.ts`.
+   ⚠️ Still true: `auto-release.yml` watches **`packages/sdk/package.json`
+   alone**, so this package has **no automated release path** and each version so
+   far has been published by hand. Extend that workflow with a matrix or adopt
+   changesets before the renderer version ships.
 2. **Do not push `Universal_Converter` before step 1.** Its commit is local and
    deliberately unpushed. A push to `main` deploys, and the build will fail on the
    missing dependency.
@@ -277,3 +282,149 @@ in the Postgres enum (0112, applied to prod), in `ProductCode`, in
   camera file would be a genuine improvement.
 - **Nothing here may fetch anything to work.** No CDN, no engine, no analytics on
   the file. The e2e test asserts it. This is not a preference; it is the product.
+
+## 8. v2 — the editor
+
+Written 2026-08-06, in the session that replaced the middle of the app with a
+timeline. The owner's brief, verbatim: *"After uploading the video on Universal
+Video, I want to see a video player to watch the video and then I want to be able
+to visualise and edit the tracks below for audio, video when I can resize (trim)
+the sliders, cut them, delete them, add an intro and outro image / video and add
+transition between different videos. Add multiple tracks if two videos are slid
+on top of each other and link the audio to the track if it's been cut."*
+
+Owner's decisions, taken as given: full export from the start; **one screen — the
+editor IS the app**, so a dropped file gives you player + timeline and "compress"
+is exporting a timeline with one clip on it; transitions are crossfade and
+fade-to/from-black only.
+
+### 8.1 The contract, and the one decision everything follows
+
+`@unisim/media`'s **`timeline.ts`** (0.2.0) is the document both this editor and
+the renderer are written against. Read it before touching anything here.
+
+**A `Clip` carries its own audio.** There is no separate audio clip and there
+must never be one. The timeline DRAWS a video lane and an audio lane for each
+clip — presentation — but a cut splits ONE `Clip` into two, so the sound is cut
+at the same instant as the picture *by construction*. `edit.test.ts` has a test
+named in shouting capitals asserting exactly that, and the Playwright spec
+asserts it a second time by reading the two audio lanes out of the DOM. If a
+future change introduces `audioClips: [...]`, those two tests are the alarm.
+
+### 8.2 Where things are
+
+| File | What it owns |
+|---|---|
+| `src/lib/edit.ts` | **Every edit, as a pure `Timeline → Timeline` function.** Trim, cut, delete, move + auto-track, intro/outro, transitions, clip audio, card length. No React, no DOM. |
+| `src/lib/compose.ts` | What is on screen and audible at one instant — `layersAt()`, `opacityAt()`, `audioAt()`, `fitInside()`. Drives the preview only. |
+| `src/lib/memory.ts` | The §10.4 refusal, extended to a timeline: **every source is resident at once**, so the budget is `Σ sources + 2 × output`. |
+| `src/lib/render.ts` | The export adapter, and the only place that knows there are two routes. |
+| `src/lib/timecode.ts` | `0:03.4` — the playhead clock. `formatDuration()` rounds to whole seconds, which cannot place a cut. |
+| `src/stores/editorStore.ts` | The impure half: `File` handles, object URLs, playhead, zoom, export in flight. Every mutation delegates to `lib/edit.ts`. |
+| `src/components/Player.tsx` | Canvas preview + transport. Composites the source `<video>`/`<img>` elements per `layersAt()`. |
+| `src/components/TimelineView.tsx` | Ruler, tracks, clips. Video lane + audio lane inside ONE box with ONE border and ONE selection ring. |
+| `src/components/Toolbar.tsx`, `Inspector.tsx`, `ExportPanel.tsx`, `SourceBin.tsx` | The verbs; the selected clip in numbers; output settings + refusal + button; the header facts. |
+
+Deleted with the old flow: `stores/videoStore.ts`, `SourceCard.tsx`,
+`SettingsPanel.tsx`, `RunPanel.tsx`.
+
+### 8.3 Decisions worth knowing before you change something
+
+- **Auto-track only applies to a DRAG.** Dropping a clip where it would overlap
+  another puts it on the first free track above (a new one if needed) — the
+  owner's "add multiple tracks if two videos are slid on top of each other". A
+  **crossfade deliberately does the opposite**: `applyCrossfade()` slides the
+  clip back over its neighbour *on the same track*, because a dissolve IS an
+  overlap, and ripples the clips after it so the join doesn't spring a gap.
+- **Deleting leaves the gap.** No ripple delete: an editor that silently closes
+  gaps moves footage the user never touched.
+- **Audio gain does not follow the picture's fade.** A fade to black with the
+  dialogue still running is a real edit; tying them together would take it away.
+- **An image is a source, not a special case** (the contract's own reasoning), so
+  an intro card trims, moves and takes a transition like footage. Changing a
+  card's length changes the source and re-clamps every clip cut from it.
+- **The one-drag-one-click compress path is intact**, and the button still says
+  *"Compress this video"* when the timeline holds a single clip.
+- **`c` cuts, `Delete` deletes, space plays** — ignored while focus is in a
+  field, or typing "3" into the out-point box would delete a clip.
+
+### 8.4 The renderer adapter — where it stands
+
+`renderTimeline()` **is not in `@unisim/media@0.2.0`**. `src/lib/render.ts`
+therefore does two things:
+
+1. **`exportRoute(timeline)`** returns `'compress'` for a timeline holding one
+   whole-source video clip, at track 0, starting at 0, with no transitions and
+   gain 1 — which is precisely what the shipped `convertVideo()` expresses, the
+   clip's in/out becoming the trim window. Every condition is something the old
+   pipeline genuinely cannot do (a clip starting at 2 s means leading black),
+   and relaxing one would silently produce the wrong file. Unit-tested.
+2. Anything else looks `renderTimeline` up **at run time** and, when it is
+   absent, throws `RendererUnavailableError` with a sentence a user can read.
+   The UI shows it as a notice and leaves the timeline exactly as it was.
+
+**When the renderer lands:** install the new `@unisim/media`, check
+`TimelineRenderInput` in `render.ts` against the real signature, and delete the
+temporary spec *"a multi-clip export says why it can't run yet"* in
+`e2e/video.e2e.ts` — replacing it with a real two-clip export read back by the
+browser's own demuxer, the way the single-clip test already does.
+
+### 8.5 What the contract could not tell us
+
+Reported to the owner; nothing here was worked around.
+
+1. **`TimelineSource` has no handle on the bytes.** It describes a source but
+   nothing in it can be decoded, so every call has to be handed the `File`s
+   separately, keyed by source id (`TimelineRenderInput.files`). That is
+   defensible — a `File` is a browser object and the document should stay
+   serialisable — but the pairing is currently invented by this app rather than
+   named by the contract.
+2. **Nothing says what the OUTPUT settings are.** `Timeline` carries `width`,
+   `height` and `fps`, but not quality, audio bitrate or "keep the sound", so
+   `VideoSettings` is passed alongside. If the renderer expects those on the
+   timeline instead, the contract should say so.
+3. **`transitionOut` and the next clip's `transitionIn` can disagree.** Two
+   overlapping clips with different kinds or lengths is representable and
+   undefined. This editor only ever writes the incoming clip's `transitionIn`
+   for a crossfade, but nothing in the types stops the other arrangement.
+4. **No z-order rule within one track.** Two clips on the SAME track that overlap
+   (which a crossfade creates) are drawn in start-time order here; the contract
+   says higher tracks cover lower ones but not what happens inside one.
+
+### 8.6 Driven live, versus only compiled
+
+`npm run test:e2e` — 12 specs, real Chromium, real MP4, no internet:
+
+- **The player really plays.** After a drop, the canvas is sampled with
+  `getImageData` and asserted to contain decoded picture rather than black.
+- **A cut splits picture and sound at the same instant** — asserted from the
+  DOM's own audio lanes, not from the model.
+- **A drag stacks a track.** A real mouse drag of the second half back over the
+  first leaves two clips, one of them on V2, overlapping. Nothing is overwritten.
+- **Delete** removes it.
+- **An image becomes a 3 s intro card** and pushes the footage behind it, its
+  audio lane saying "no sound in this file" rather than being absent.
+- **A trim typed into the Inspector** produces a shorter, smaller MP4, read back
+  by Chromium.
+- The v1 proofs all still run: the H1, light mode, the header probe, the estimate
+  on the button, the `.mkv` and not-really-an-MP4 refusals, and that nothing is
+  uploaded.
+
+**Only compiled, not driven:** the multi-clip export (no renderer yet); a real
+memory refusal on a large edit (the unit tests cover the arithmetic, but no
+multi-gigabyte set of files has been through the UI); anything but Chromium;
+mobile; touch-drag on the timeline (pointer events are used, so it *should*
+work, but no device has touched it).
+
+### 8.7 Landmines this session added
+
+- **Do not model audio as a parallel array.** §8.1. Two objects for one piece of
+  footage is how picture and sound drift apart.
+- **`package.json` needs `@unisim/media@^0.2.0`** — 0.1.0 has no `timeline.ts`
+  and the app will not compile against it.
+- **`getByLabel('Playhead')` was ambiguous** while the preview canvas was
+  `aria-label="Preview of the edit at the playhead"`. Playwright's label match is
+  a substring; the canvas is now labelled "Preview of the edit".
+- **The pure functions are the specification.** If an interaction feels wrong,
+  fix it in `lib/edit.ts` with a test, not in the component — the component is
+  the only part with no way to prove itself.

@@ -1,6 +1,6 @@
 import { formatBytes, formatDuration } from '@unisim/media'
 import { isOverrunning, projectedBytes } from '../lib/eta'
-import { useVideoStore } from '../stores/videoStore'
+import { useEditorStore } from '../stores/editorStore'
 
 /**
  * §10.4, point 5: "make trouble visible at 20%, not at 100%".
@@ -14,8 +14,8 @@ import { useVideoStore } from '../stores/videoStore'
  * Nobody should wait ten minutes to find out.
  */
 export default function Progress() {
-  const progress = useVideoStore((s) => s.progress)
-  const plan = useVideoStore((s) => s.plan)
+  const progress = useEditorStore((s) => s.progress)
+  const plan = useEditorStore((s) => s.plan)
   if (!progress) return null
 
   const pct = Math.round(progress.fraction * 100)
@@ -26,7 +26,7 @@ export default function Progress() {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
       <div className="flex items-baseline justify-between gap-4">
-        <p className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">Compressing…</p>
+        <p className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">Writing the file…</p>
         <p className="text-[12px] tabular-nums text-slate-500 dark:text-slate-400">
           {progress.secondsLeft === null
             ? 'measuring this device…'

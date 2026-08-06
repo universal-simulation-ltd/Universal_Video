@@ -4,21 +4,37 @@ import UsageTracker from './UsageTracker'
 import AppMenu from './components/Header/AppMenu'
 import ProductLogo from './components/Header/ProductLogo'
 import DropZone from './components/DropZone'
-import SourceCard from './components/SourceCard'
-import SettingsPanel from './components/SettingsPanel'
-import RunPanel from './components/RunPanel'
+import SourceBin from './components/SourceBin'
+import Player from './components/Player'
+import Toolbar from './components/Toolbar'
+import TimelineView from './components/TimelineView'
+import Inspector from './components/Inspector'
+import ExportPanel from './components/ExportPanel'
 import Progress from './components/Progress'
 import ResultCard from './components/ResultCard'
 import Honesty from './components/Honesty'
-import { useVideoStore } from './stores/videoStore'
+import { useEditorStore } from './stores/editorStore'
 
 const REPO_URL = 'https://github.com/universal-simulation-ltd/Universal_Video'
 
+/**
+ * One screen. The editor IS the app.
+ *
+ * There is no "compress mode" and no "edit mode" to choose between: a dropped
+ * file becomes a clip on a timeline, and compressing it is exporting a timeline
+ * with one clip on it. That is why the fast path stayed fast — one drag, one
+ * click, and the button still says "Compress this video" when that is what it
+ * is about to do.
+ */
 export default function App() {
-  const phase = useVideoStore((s) => s.phase)
-  const error = useVideoStore((s) => s.error)
-  const checkSupport = useVideoStore((s) => s.checkSupport)
-  const reset = useVideoStore((s) => s.reset)
+  const status = useEditorStore((s) => s.status)
+  const error = useEditorStore((s) => s.error)
+  const clips = useEditorStore((s) => s.timeline.clips.length)
+  const checkSupport = useEditorStore((s) => s.checkSupport)
+  const cut = useEditorStore((s) => s.cut)
+  const removeSelected = useEditorStore((s) => s.removeSelected)
+  const setPlaying = useEditorStore((s) => s.setPlaying)
+  const playing = useEditorStore((s) => s.playing)
 
   // Probe H.264 encode support once, on arrival, so a Firefox visitor is told
   // before they pick a file rather than after waiting through one.
@@ -26,7 +42,24 @@ export default function App() {
     void checkSupport()
   }, [checkSupport])
 
-  const hasFile = phase !== 'idle' && phase !== 'failed'
+  // The three keys every editor has. Deliberately ignored while the focus is in
+  // a field, or typing "3" into the out-point box would delete a clip.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const el = e.target as HTMLElement | null
+      if (el && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) return
+      if (e.key === 'c' || e.key === 'C') cut()
+      if (e.key === 'Delete' || e.key === 'Backspace') removeSelected()
+      if (e.key === ' ') {
+        e.preventDefault()
+        setPlaying(!playing)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [cut, removeSelected, setPlaying, playing])
+
+  const editing = clips > 0
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-100 dark:bg-slate-950">
@@ -41,7 +74,7 @@ export default function App() {
 
       <UsageTracker />
 
-      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8 sm:px-6 lg:px-8">
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6 lg:px-8">
         <header className="mb-8">
           {/* This exact sentence is the reason the app exists as its own front
               door rather than a tab in Universal Converter — see index.html.
@@ -51,52 +84,49 @@ export default function App() {
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">
             Drop an MP4, M4V or MOV and it is opened right here, in this tab, by
-            your own browser. Shrink it, trim it, resize it — then save it back.
-            No upload, no account, no size cap, no watermark and no queue.
+            your own browser — with a player and a timeline. Shrink it, trim it,
+            cut it, stack clips, add an intro or an outro. No upload, no account,
+            no size cap, no watermark and no queue.
           </p>
         </header>
 
-        <div className="space-y-5">
-          {phase === 'failed' && error && (
+        <div className="space-y-4">
+          {error && (
             <div role="alert" className="rounded-2xl bg-red-50 px-5 py-4 text-[12.5px] leading-relaxed text-red-900 dark:bg-red-950/40 dark:text-red-200">
               <p className="font-semibold">That didn’t work</p>
               <p className="mt-1">{error}</p>
-              <button
-                type="button"
-                onClick={reset}
-                className="mt-3 rounded-lg bg-red-700 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-red-800"
-              >
-                Try another file
-              </button>
             </div>
           )}
 
-          {!hasFile && <DropZone />}
+          {!editing && <DropZone />}
 
-          {phase === 'reading' && (
+          {status === 'reading' && (
             <p className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-[13px] text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
               Reading the file’s header…
             </p>
           )}
 
-          {(phase === 'ready' || phase === 'running' || phase === 'done') && <SourceCard />}
-
-          {phase === 'ready' && (
+          {editing && (
             <>
-              <SettingsPanel />
-              <RunPanel />
+              <Player />
+              <Toolbar />
+              <TimelineView />
+              <div className="grid gap-4 lg:grid-cols-2">
+                <Inspector />
+                <div className="space-y-4">
+                  <SourceBin />
+                  {status === 'exporting' ? <Progress /> : status === 'done' ? <ResultCard /> : <ExportPanel />}
+                </div>
+              </div>
             </>
           )}
-
-          {phase === 'running' && <Progress />}
-          {phase === 'done' && <ResultCard />}
 
           <Honesty />
         </div>
       </main>
 
       <footer className="border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-        <div className="mx-auto flex w-full max-w-3xl flex-row items-center gap-3 px-4 py-4 text-xs text-slate-500 sm:gap-4 sm:px-6 lg:px-8 dark:text-slate-400">
+        <div className="mx-auto flex w-full max-w-5xl flex-row items-center gap-3 px-4 py-4 text-xs text-slate-500 sm:gap-4 sm:px-6 lg:px-8 dark:text-slate-400">
           <span>
             100% free — every feature, no paywalls. Your video never leaves this
             device. Hosted by{' '}
