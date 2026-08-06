@@ -10,7 +10,6 @@ import RunPanel from './components/RunPanel'
 import Progress from './components/Progress'
 import ResultCard from './components/ResultCard'
 import Honesty from './components/Honesty'
-import { VIDEO_CATALOGUE } from './lib/catalogue'
 import { useVideoStore } from './stores/videoStore'
 
 const REPO_URL = 'https://github.com/universal-simulation-ltd/Universal_Video'
@@ -33,7 +32,6 @@ export default function App() {
     <div className="flex min-h-screen flex-col bg-slate-100 dark:bg-slate-950">
       <UniversalAppsNavBar
         product="video"
-        products={VIDEO_CATALOGUE}
         productLogo={<ProductLogo />}
         productHomeHref={import.meta.env.BASE_URL}
         actions={<AppMenu />}
