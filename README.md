@@ -56,7 +56,7 @@ drag and one click. What has **not** changed is everything below.
 | **Filters, text, speed ramps, detached audio** | ❌ No colour work, no titles or watermarks, no speed changes, and no separating a clip's sound from its picture. Transitions are crossfade and fade to black only. |
 | **Record** | ❌ That is **[Universal Recorder](https://opensource.unisim.co.uk/recorder)**. Adjacent products should not grow into each other. |
 | **Fall back to a server for big files** | ⛔ **Never.** One *"we'll process the big ones on our server"* button would make every other sentence on the page false, and it would be discovered in five seconds by anyone with devtools open. If a hosted path ever exists it is a separate, explicitly-labelled product. |
-| **Run in Firefox** | ❌ Firefox has no WebCodecs H.264 **encoder**. It is probed on arrival and said plainly, rather than failing after a long wait. Chrome, Edge and Safari 16.4+ are fine. |
+| **Run in Firefox** | ❌ Firefox has no WebCodecs H.264 **encoder**. It is probed on arrival and said plainly, rather than failing after a long wait. **Tested on Chrome and Edge.** Safari 16.4+ ships WebCodecs and ought to work, but it has never been run there — an untested browser is not a supported one, so it is not claimed as one. |
 
 ## The ceiling, and why it is the *output* that binds
 

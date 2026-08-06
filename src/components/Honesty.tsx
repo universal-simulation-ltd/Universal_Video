@@ -66,9 +66,12 @@ export default function Honesty() {
           through.
         </Row>
         <Row term="Needs the right browser">
-          Chrome, Edge and Safari 16.4+. Firefox has no WebCodecs H.264
+          Chrome and Edge, which is where this is tested. Safari 16.4+ has
+          WebCodecs and ought to work, but we have not run it there and would
+          rather say so than let you find out. Firefox has no WebCodecs H.264
           <em> encoder</em> yet, so it is told plainly on arrival rather than at
-          the end of a long wait.
+          the end of a long wait — and whatever browser you bring, support is
+          probed before anything runs.
         </Row>
       </dl>
     </section>
