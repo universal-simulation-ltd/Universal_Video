@@ -228,6 +228,78 @@ test.describe('Universal Video', () => {
     await expect(page.locator('[data-testid=clip]')).toHaveCount(1)
   })
 
+  test('the timeline is exactly as wide as the picture, and the needle lines up with it', async ({ page }) => {
+    // The owner's ask, mechanised: "match the timeline to the width of the video
+    // so the player needle matches the same position in the video". At fit that
+    // is not an approximation — the movie IS the width, so the needle at t is at
+    // t/duration of it, and it can be asserted in pixels rather than eyeballed.
+    await page.goto('/')
+    await drop(page, 'clip.mp4', FIXTURE_BYTES)
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(1)
+
+    const canvas = (await page.locator('[data-testid=preview]').boundingBox())!
+    const surface = (await page.locator('[data-testid=timeline-surface]').boundingBox())!
+
+    // Same width, and the same x on screen: the needle is under the picture,
+    // not merely proportional to something the same shape.
+    expect(Math.abs(surface.width - canvas.width)).toBeLessThan(1)
+    expect(Math.abs(surface.x - canvas.x)).toBeLessThan(1)
+
+    const duration = await page.evaluate(
+      () => Number(document.querySelector('[data-testid=clip]')!.getAttribute('data-end')),
+    )
+
+    // Nothing scrolls at fit — a timeline that can scroll at fit is a timeline
+    // that can stop lining up (the ruler's overhanging tick used to do exactly
+    // that, which is why the ruler is clipped).
+    const scroll = await page.evaluate(() => {
+      const box = document.querySelector('[data-testid=timeline-surface]')!.parentElement!
+      return { over: box.scrollWidth - box.clientWidth, at: box.scrollLeft }
+    })
+    expect(scroll.over).toBeLessThanOrEqual(2)
+    expect(scroll.at).toBe(0)
+
+    // …including at the very last frame, where the needle sits on the edge.
+    for (const t of [0, 0.5, 1, 1.5, duration]) {
+      await page.getByLabel('Playhead').fill(String(t))
+      const needle = (await page.locator('[data-testid=playhead]').boundingBox())!
+      // Where the picture would have to be scrubbed to, in page pixels.
+      const expected = canvas.x + (t / duration) * canvas.width
+      expect(Math.abs(needle.x - expected)).toBeLessThan(1)
+    }
+  })
+
+  test('zoom makes the timeline wider without losing the playhead', async ({ page }) => {
+    await page.goto('/')
+    await drop(page, 'clip.mp4', FIXTURE_BYTES)
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(1)
+
+    const surface = page.locator('[data-testid=timeline-surface]')
+    const viewport = (await page.locator('[data-testid=timeline]').boundingBox())!
+    const fitted = (await surface.boundingBox())!.width
+    await expect(page.locator('[data-testid=zoom-level]')).toHaveText('Fit')
+    // Nothing to zoom out to: fit is the whole movie.
+    await expect(page.getByRole('button', { name: 'Zoom out' })).toBeDisabled()
+
+    await page.getByLabel('Playhead').fill('1.5')
+    await page.getByRole('button', { name: 'Zoom in' }).click()
+
+    const zoomed = (await surface.boundingBox())!.width
+    expect(zoomed).toBeGreaterThan(fitted * 1.4)
+    await expect(page.locator('[data-testid=zoom-level]')).toHaveText('150%')
+
+    // The needle is still on screen — zooming about the left edge would have
+    // put 1.5 s of a 2 s clip off the right-hand side.
+    const needle = (await page.locator('[data-testid=playhead]').boundingBox())!
+    expect(needle.x).toBeGreaterThan(viewport.x)
+    expect(needle.x).toBeLessThan(viewport.x + viewport.width)
+
+    // Fit puts it back, exactly.
+    await page.getByRole('button', { name: /^Fit/ }).click()
+    await expect(page.locator('[data-testid=zoom-level]')).toHaveText('Fit')
+    expect(Math.abs((await surface.boundingBox())!.width - fitted)).toBeLessThan(1)
+  })
+
   test('an image becomes an intro card in front of the video', async ({ page }) => {
     await page.goto('/')
     await drop(page, 'clip.mp4', FIXTURE_BYTES)

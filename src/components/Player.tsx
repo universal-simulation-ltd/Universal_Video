@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { timelineDuration } from '@unisim/media'
 import { audioAt, fitInside, layersAt } from '../lib/compose'
+import { PLAYER_MAX_W } from '../lib/layout'
 import { timecode } from '../lib/timecode'
 import { useEditorStore } from '../stores/editorStore'
 
@@ -143,7 +144,9 @@ export default function Player() {
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-      <div className="mx-auto w-full" style={{ maxWidth: 720 }}>
+      {/* The timeline's scroll viewport is laid out from this same constant, in
+          this same box, so the needle lines up under the picture. */}
+      <div className="mx-auto w-full" style={{ maxWidth: PLAYER_MAX_W }}>
         <canvas
           ref={canvasRef}
           width={640}

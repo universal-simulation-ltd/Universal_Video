@@ -320,6 +320,8 @@ future change introduces `audioClips: [...]`, those two tests are the alarm.
 | `src/lib/memory.ts` | The §10.4 refusal, extended to a timeline: **every source is resident at once**, so the budget is `Σ sources + 2 × output`. |
 | `src/lib/render.ts` | The export adapter, and the only place that knows there are two routes. |
 | `src/lib/timecode.ts` | `0:03.4` — the playhead clock. `formatDuration()` rounds to whole seconds, which cannot place a cut. |
+| `src/lib/zoom.ts` | Zoom as a multiple of **fit-to-width**, and the pixels-per-second derived from it. At fit the movie is exactly as wide as the picture, so the needle at `t` is at `t / duration` of it. |
+| `src/lib/layout.ts` | `PLAYER_MAX_W` — the one width the picture and the timeline both lay out from. |
 | `src/stores/editorStore.ts` | The impure half: `File` handles, object URLs, playhead, zoom, export in flight. Every mutation delegates to `lib/edit.ts`. |
 | `src/components/Player.tsx` | Canvas preview + transport. Composites the source `<video>`/`<img>` elements per `layersAt()`. |
 | `src/components/TimelineView.tsx` | Ruler, tracks, clips. Video lane + audio lane inside ONE box with ONE border and ONE selection ring. |
@@ -347,6 +349,16 @@ Deleted with the old flow: `stores/videoStore.ts`, `SourceCard.tsx`,
   *"Compress this video"* when the timeline holds a single clip.
 - **`c` cuts, `Delete` deletes, space plays** — ignored while focus is in a
   field, or typing "3" into the out-point box would delete a clip.
+- **The timeline is as wide as the picture, and zoom is a multiple of that.**
+  `zoomFactor: 1` means fit; `pxPerSec` is derived from a measured width
+  (`lib/zoom.ts`), never stored. What is matched is the player's **output
+  frame** — a source with a different aspect is letterboxed inside it, and the
+  black is part of the picture — not the visible rectangle of the current clip,
+  which would change the timeline's width from clip to clip. Two things are
+  load-bearing for the alignment and both have bitten already: the ruler is
+  clipped (it draws one tick past the end) and the follow-the-playhead scroll
+  ignores a couple of pixels of overflow (the needle is 2 px wide and sits on
+  the last instant). Anything that can scroll the timeline at fit breaks it.
 
 ### 8.4 The renderer adapter — where it stands
 

@@ -1,8 +1,19 @@
-import { useCallback, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+  type RefObject,
+} from 'react'
 import { clipDuration, clipSpan, timelineDuration, type Clip } from '@unisim/media'
 import { sourceById, trackCount } from '../lib/edit'
+import { PLAYER_MAX_W } from '../lib/layout'
 import { timecode } from '../lib/timecode'
-import { useEditorStore } from '../stores/editorStore'
+import { contentWidthFor } from '../lib/zoom'
+import { selectPxPerSec, useEditorStore } from '../stores/editorStore'
 
 /**
  * The timeline: a ruler, and every clip drawn as a video lane and an audio lane
@@ -18,6 +29,21 @@ import { useEditorStore } from '../stores/editorStore'
  * V1 is at the BOTTOM and higher tracks stack above it, matching the contract's
  * `track: 0` and matching every other editor: what is higher covers what is
  * lower.
+ *
+ * The whole thing is drawn to the PLAYER's width, not to some fixed pixels per
+ * second: the scroll viewport below is the same box the picture is drawn in
+ * (`PLAYER_MAX_W`, centred, same padding), it is measured rather than assumed,
+ * and `lib/zoom.ts` turns that width into pixels per second. At fit the movie
+ * spans it exactly, so the needle at `t` sits at `t / duration` of the width —
+ * under the frame the player is showing.
+ *
+ * ⚠️ It is the player's PICTURE FRAME we match, not the visible rectangle of
+ * whatever source happens to be on screen. The canvas is the output frame and
+ * the exported movie is exactly that shape; a source with a different aspect is
+ * letterboxed INSIDE it (`fitInside()`, same as the renderer), and the black is
+ * part of the picture — a `fade` fades to it. Matching the letterboxed source
+ * rectangle instead would make the timeline change width from clip to clip,
+ * which is not a thing "the width of the video" can sensibly mean.
  */
 
 const TRACK_H = 62
@@ -26,17 +52,54 @@ const RULER_H = 26
 
 export default function TimelineView() {
   const timeline = useEditorStore((s) => s.timeline)
-  const pxPerSec = useEditorStore((s) => s.pxPerSec)
+  const pxPerSec = useEditorStore(selectPxPerSec)
+  const zoomFactor = useEditorStore((s) => s.zoomFactor)
+  const viewportPx = useEditorStore((s) => s.viewportPx)
+  const setViewport = useEditorStore((s) => s.setViewport)
   const seek = useEditorStore((s) => s.seek)
   const setPlaying = useEditorStore((s) => s.setPlaying)
   const surfaceRef = useRef<HTMLDivElement>(null)
+  const viewRef = useRef<HTMLDivElement>(null)
 
   const duration = timelineDuration(timeline)
   // One empty track above the highest in use, so "drag it up to a new track" is
   // a place you can actually drop on rather than a rule you have to know.
   const rows = trackCount(timeline) + 1
-  const width = Math.max(duration * pxPerSec + 160, 480)
+  const width = contentWidthFor(viewportPx, duration, zoomFactor)
   const height = rows * TRACK_H + (rows - 1) * TRACK_GAP
+
+  // Measured, not assumed: the box is capped at PLAYER_MAX_W but narrower on a
+  // small window, and a fit that was computed from the cap would be wrong by
+  // exactly the difference.
+  useLayoutEffect(() => {
+    const el = viewRef.current
+    if (!el) return
+    setViewport(el.getBoundingClientRect().width)
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(([entry]) => setViewport(entry.contentRect.width))
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [setViewport])
+
+  // Zoom about the PLAYHEAD: keep the frame under the needle where it is on
+  // screen. Anchoring on the left edge instead would throw you somewhere else
+  // in the movie on every press — the difference between zooming in on a cut
+  // and losing it.
+  const lastPxPerSecRef = useRef(pxPerSec)
+  useLayoutEffect(() => {
+    const el = viewRef.current
+    const before = lastPxPerSecRef.current
+    lastPxPerSecRef.current = pxPerSec
+    if (!el || before === pxPerSec) return
+    // Read the playhead rather than subscribing to it: this component must not
+    // re-render while the movie plays (see `Playhead` below).
+    const at = useEditorStore.getState().playheadSec
+    const wasAt = at * before - el.scrollLeft
+    // If the needle was off-screen, pull it to the nearest edge rather than
+    // preserving an offset nobody could see.
+    const keep = Math.min(Math.max(wasAt, 0), el.clientWidth)
+    el.scrollLeft = at * pxPerSec - keep
+  }, [pxPerSec])
 
   const secondsAt = useCallback(
     (clientX: number) => {
@@ -51,50 +114,61 @@ export default function TimelineView() {
     <section
       data-testid="timeline"
       aria-label="Timeline"
-      className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900"
+      className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900"
     >
-      <div ref={surfaceRef} className="relative" style={{ width, minWidth: '100%' }}>
-        <Ruler
-          duration={duration}
-          pxPerSec={pxPerSec}
-          width={width}
-          onSeek={(sec) => {
-            setPlaying(false)
-            seek(sec)
-          }}
-        />
+      {/* The same box as the player's picture, so x means the same thing in
+          both. Scrolling lives here, on the box, not on the section. */}
+      <div ref={viewRef} className="mx-auto w-full overflow-x-auto" style={{ maxWidth: PLAYER_MAX_W }}>
+        <div
+          ref={surfaceRef}
+          data-testid="timeline-surface"
+          data-px-per-sec={pxPerSec.toFixed(4)}
+          data-zoom={zoomFactor.toFixed(3)}
+          className="relative"
+          style={{ width }}
+        >
+          <Ruler
+            duration={duration}
+            pxPerSec={pxPerSec}
+            width={width}
+            onSeek={(sec) => {
+              setPlaying(false)
+              seek(sec)
+            }}
+          />
 
-        <div className="relative mt-1" style={{ height }}>
-          {Array.from({ length: rows }, (_, i) => {
-            const track = rows - 1 - i
-            return (
-              <div
-                key={track}
-                data-testid="track"
-                data-track={track}
-                className="absolute left-0 right-0 rounded-lg border border-dashed border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40"
-                style={{ top: i * (TRACK_H + TRACK_GAP), height: TRACK_H }}
-              >
-                <span className="pointer-events-none absolute left-1 top-1 text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400">
-                  V{track + 1}
-                </span>
-              </div>
-            )
-          })}
+          <div className="relative mt-1" style={{ height }}>
+            {Array.from({ length: rows }, (_, i) => {
+              const track = rows - 1 - i
+              return (
+                <div
+                  key={track}
+                  data-testid="track"
+                  data-track={track}
+                  className="absolute left-0 right-0 rounded-lg border border-dashed border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40"
+                  style={{ top: i * (TRACK_H + TRACK_GAP), height: TRACK_H }}
+                >
+                  <span className="pointer-events-none absolute left-1 top-1 text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                    V{track + 1}
+                  </span>
+                </div>
+              )
+            })}
 
-          {timeline.clips.map((clip) => (
-            <ClipBlock
-              key={clip.id}
-              clip={clip}
-              rows={rows}
-              pxPerSec={pxPerSec}
-              secondsAt={secondsAt}
-              surfaceRef={surfaceRef}
-            />
-          ))}
+            {timeline.clips.map((clip) => (
+              <ClipBlock
+                key={clip.id}
+                clip={clip}
+                rows={rows}
+                pxPerSec={pxPerSec}
+                secondsAt={secondsAt}
+                surfaceRef={surfaceRef}
+              />
+            ))}
+          </div>
+
+          <Playhead pxPerSec={pxPerSec} height={height + RULER_H + 4} viewRef={viewRef} />
         </div>
-
-        <Playhead pxPerSec={pxPerSec} height={height + RULER_H + 4} />
       </div>
     </section>
   )
@@ -115,6 +189,10 @@ function Ruler({
   const ticks: number[] = []
   for (let t = 0; t <= duration + step; t += step) ticks.push(Number(t.toFixed(3)))
 
+  // `overflow-hidden` below is load-bearing: the loop above deliberately runs one
+  // tick PAST the end, and a tick allowed to overflow makes the box scrollable at
+  // fit — a timeline that can scroll at fit is a timeline that stops lining up
+  // with the picture.
   return (
     <div
       role="presentation"
@@ -122,7 +200,7 @@ function Ruler({
         const rect = e.currentTarget.getBoundingClientRect()
         onSeek(Math.max(0, (e.clientX - rect.left) / pxPerSec))
       }}
-      className="relative cursor-pointer select-none border-b border-slate-200 dark:border-slate-800"
+      className="relative cursor-pointer select-none overflow-hidden border-b border-slate-200 dark:border-slate-800"
       style={{ height: RULER_H, width }}
     >
       {ticks.map((t) => (
@@ -138,14 +216,42 @@ function Ruler({
 }
 
 /** Its own component so the playhead can move at 60 fps without redrawing the clips. */
-function Playhead({ pxPerSec, height }: { pxPerSec: number; height: number }) {
+function Playhead({
+  pxPerSec,
+  height,
+  viewRef,
+}: {
+  pxPerSec: number
+  height: number
+  viewRef: RefObject<HTMLDivElement>
+}) {
   const playheadSec = useEditorStore((s) => s.playheadSec)
+  const left = playheadSec * pxPerSec
+
+  // Zoomed in, the movie is wider than the box, and a needle you cannot see is
+  // no better than no needle: scroll to follow it. This lives here rather than
+  // in TimelineView because this is the one component that re-renders per frame
+  // — putting it in the parent would redraw every clip at 60 fps.
+  useEffect(() => {
+    const el = viewRef.current
+    // "Scrollable" needs a couple of pixels of slack: `scrollWidth` is a whole
+    // number, and this needle is 2 px wide sitting ON the last instant, so a
+    // surface that fits exactly still reports a hair of overflow. Without the
+    // slack the last frame of every movie scrolls itself 2 px out of line with
+    // the picture — measured, not theoretical. Zooming in adds `TRAIL_PX`, so
+    // real scrolling is never this close a call.
+    if (!el || el.scrollWidth <= el.clientWidth + 2) return
+    const margin = 32
+    if (left < el.scrollLeft + margin) el.scrollLeft = left - margin
+    else if (left > el.scrollLeft + el.clientWidth - margin) el.scrollLeft = left - el.clientWidth + margin
+  }, [left, viewRef])
+
   return (
     <div
       data-testid="playhead"
       data-sec={playheadSec.toFixed(3)}
       className="pointer-events-none absolute top-0 z-20 w-0.5 bg-orange-600"
-      style={{ left: playheadSec * pxPerSec, height }}
+      style={{ left, height }}
     />
   )
 }

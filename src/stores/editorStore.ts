@@ -34,6 +34,7 @@ import {
   trimClip,
 } from '../lib/edit'
 import { planTimelineExport, type TimelinePlan } from '../lib/memory'
+import { FALLBACK_VIEWPORT_PX, FIT, clampZoom, maxZoomFor, pxPerSecFor } from '../lib/zoom'
 import { exportRoute, exportTimeline } from '../lib/render'
 import { secondsRemaining } from '../lib/eta'
 
@@ -90,8 +91,14 @@ interface EditorState {
   selectedClipId: ClipId | null
   playheadSec: number
   playing: boolean
-  /** Timeline zoom. Pixels per second of movie. */
-  pxPerSec: number
+  /**
+   * Timeline zoom, as a multiple of fit-to-width: 1 means the whole movie spans
+   * the player's picture, so the needle at `t` is at `t / duration` of it.
+   * Pixels per second is derived from this and `viewportPx` — see `lib/zoom.ts`.
+   */
+  zoomFactor: number
+  /** The width the timeline has to draw in, measured from the DOM by TimelineView. */
+  viewportPx: number
   settings: VideoSettings
   plan: TimelinePlan | null
   progress: RunProgress | null
@@ -106,7 +113,9 @@ interface EditorState {
   select(clipId: ClipId | null): void
   seek(sec: number): void
   setPlaying(playing: boolean): void
-  zoom(pxPerSec: number): void
+  zoom(zoomFactor: number): void
+  zoomBy(multiple: number): void
+  setViewport(px: number): void
 
   cut(): void
   removeSelected(): void
@@ -151,7 +160,8 @@ export const useEditorStore = create<EditorState>((set, get) => {
     selectedClipId: null,
     playheadSec: 0,
     playing: false,
-    pxPerSec: 60,
+    zoomFactor: FIT,
+    viewportPx: FALLBACK_VIEWPORT_PX,
     settings: DEFAULT_VIDEO_SETTINGS,
     plan: null,
     progress: null,
@@ -240,7 +250,22 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
     setPlaying: (playing) => set({ playing }),
 
-    zoom: (pxPerSec) => set({ pxPerSec: Math.min(400, Math.max(4, pxPerSec)) }),
+    // The clamp needs the duration and the measured width, because how far in a
+    // movie can usefully be pushed depends on both — see `maxZoomFor()`.
+    zoom: (zoomFactor) => {
+      const { viewportPx, timeline } = get()
+      set({ zoomFactor: clampZoom(zoomFactor, viewportPx, timelineDuration(timeline)) })
+    },
+
+    zoomBy: (multiple) => get().zoom(get().zoomFactor * multiple),
+
+    setViewport: (px) => {
+      // Re-clamp on resize: a narrower window makes fit coarser, which can put
+      // the current zoom above the new ceiling.
+      const { viewportPx, timeline, zoomFactor } = get()
+      if (Math.abs(px - viewportPx) < 0.5) return
+      set({ viewportPx: px, zoomFactor: clampZoom(zoomFactor, px, timelineDuration(timeline)) })
+    },
 
     cut: () => {
       const { timeline, playheadSec } = get()
@@ -354,7 +379,10 @@ export const useEditorStore = create<EditorState>((set, get) => {
         selectedClipId: null,
         playheadSec: 0,
         playing: false,
-        pxPerSec: 60,
+        // `viewportPx` deliberately survives a reset: it is a fact about the
+        // window, not about the edit, and re-measuring it costs a frame of
+        // wrong-width timeline.
+        zoomFactor: FIT,
         settings: DEFAULT_VIDEO_SETTINGS,
         plan: null,
         progress: null,
@@ -368,6 +396,13 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
 /** Selectors used in more than one component. */
 export const selectDuration = (s: EditorState) => timelineDuration(s.timeline)
+/**
+ * The zoom, in the units everything that draws works in. Derived rather than
+ * stored so it cannot fall out of step with the width or the duration.
+ */
+export const selectPxPerSec = (s: EditorState) =>
+  pxPerSecFor(s.viewportPx, timelineDuration(s.timeline), s.zoomFactor)
+export const selectMaxZoom = (s: EditorState) => maxZoomFor(s.viewportPx, timelineDuration(s.timeline))
 export const selectSelectedClip = (s: EditorState) =>
   s.selectedClipId ? clipById(s.timeline, s.selectedClipId) : undefined
 export const selectRoute = (s: EditorState) => exportRoute(s.timeline)
