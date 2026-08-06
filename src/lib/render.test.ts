@@ -11,7 +11,7 @@ import {
   setTransition,
   trimClip,
 } from './edit'
-import { RendererUnavailableError, exportRoute, exportTimeline, rendererAvailable, trimForClip } from './render'
+import { exportName, exportRoute, exportTimeline, rendererAvailable, trimForClip } from './render'
 
 function oneVideo(durationSec = 10): Timeline {
   let tl = emptyTimeline()
@@ -83,25 +83,18 @@ describe('turning a clip into a trim window', () => {
 })
 
 describe('the renderer adapter', () => {
-  it('reports honestly whether the installed package has renderTimeline()', () => {
-    // At the time of writing it does NOT — @unisim/media 0.2.0 is the timeline
-    // contract only, and the renderer is being written against it separately.
-    // This assertion is a fact about the installed dependency, so when the
-    // renderer lands it flips and this test is the reminder to drive the real
-    // multi-clip export end to end.
-    expect(typeof rendererAvailable()).toBe('boolean')
+  it('has the timeline renderer available in the installed package', () => {
+    // Not a tautology: this asserts a fact about the DEPENDENCY. The editor was
+    // built against a throwing shim while @unisim/media 0.3.0 was being written,
+    // and this is the test that fails if a future install drops back to a
+    // version without renderTimeline() — which would otherwise show up as a
+    // multi-clip export dying at the moment somebody pressed the button.
+    expect(rendererAvailable()).toBe(true)
   })
 
-  it('refuses a multi-clip export in a sentence rather than a stack trace', async () => {
-    if (rendererAvailable()) return // the renderer has landed; nothing to prove here
+  it('names the export after the first video, because an edit has no input file', () => {
     const base = oneVideo()
-    const tl = cutClip(base, base.clips[0].id, 5)
-    await expect(
-      exportTimeline({ timeline: tl, files: {}, settings: nullSettings() }),
-    ).rejects.toBeInstanceOf(RendererUnavailableError)
-    await expect(
-      exportTimeline({ timeline: tl, files: {}, settings: nullSettings() }),
-    ).rejects.toThrow(/does not have it yet/)
+    expect(exportName(base)).toMatch(/-edit\.mp4$/)
   })
 
   it('says there is nothing to export rather than producing an empty file', async () => {

@@ -1,14 +1,15 @@
 /**
  * The one place this app turns a `Timeline` into a file.
  *
- * ⚠️ **`renderTimeline()` does not exist in `@unisim/media` yet.** It is being
- * written against the same `timeline.ts` contract this editor is written
- * against. Rather than invent a second timeline shape to work around the gap,
- * or stub a renderer that appears to work and silently produces the wrong file,
- * this adapter looks the function up at run time and, when it isn't there, says
- * so in a sentence a user can understand. When the package ships it, the only
- * thing that should need changing here is the `RenderTimelineFn` signature —
- * and if it needs more than that, this file is the diff to read.
+ * `renderTimeline()` landed in `@unisim/media` 0.3.0 and this adapter calls it.
+ * It was written against a throwing shim first, deliberately: inventing a second
+ * timeline shape to work around the gap, or stubbing a renderer that appeared to
+ * work, would have produced the wrong file silently. Both halves were built
+ * against the same `timeline.ts` and met here, and the bridge turned out to be
+ * small — which is the point of having fixed the contract first.
+ *
+ * One real difference: the renderer returns a bare `Blob`, because an edit has
+ * no input file to take a name from. **Naming the download is this file's job.**
  *
  * ── The one route that DOES work today ───────────────────────────────────────
  *
@@ -52,27 +53,9 @@ export interface TimelineRenderInput {
   settings: VideoSettings
 }
 
-type RenderTimelineFn = (
-  input: TimelineRenderInput,
-  onDetail?: (progress: VideoProgress) => void,
-) => Promise<ConvertedFile>
-
-/** Thrown when a multi-clip export is asked for and the renderer isn't in the package yet. */
-export class RendererUnavailableError extends Error {
-  constructor() {
-    super(
-      'Exporting an edit with more than one clip needs the timeline renderer, and the ' +
-        'copy of @unisim/media installed here does not have it yet. Everything on the ' +
-        'timeline is saved in this tab and nothing has been lost — a single clip on its ' +
-        'own still exports today.',
-    )
-    this.name = 'RendererUnavailableError'
-  }
-}
-
 /** Is the timeline renderer present in the installed package? */
 export function rendererAvailable(): boolean {
-  return typeof lookupRenderTimeline() === 'function'
+  return typeof media.renderTimeline === 'function'
 }
 
 export type ExportRoute = 'compress' | 'render'
@@ -108,9 +91,41 @@ export async function exportTimeline(
     return compressSingleClip(input, onDetail)
   }
 
-  const render = lookupRenderTimeline()
-  if (!render) throw new RendererUnavailableError()
-  return render(input, onDetail)
+  return renderWholeTimeline(input, onDetail)
+}
+
+/**
+ * The multi-clip path: hand the whole edit to `@unisim/media` and name what
+ * comes back. The files go separately, keyed by source id — the contract
+ * deliberately carries no handle on the bytes so the document stays
+ * serialisable, and a `File` is a browser object.
+ */
+async function renderWholeTimeline(
+  { timeline, files, settings }: TimelineRenderInput,
+  onDetail?: (progress: VideoProgress) => void,
+): Promise<ConvertedFile> {
+  const blob = await media.renderTimeline(
+    timeline,
+    files,
+    { quality: settings.quality, audioBitrateKbps: settings.audioBitrateKbps },
+    undefined,
+    onDetail,
+  )
+  return { blob, name: exportName(timeline) }
+}
+
+/**
+ * What the finished edit is called.
+ *
+ * The first video source lends its stem, because it is the closest thing the
+ * document has to "what this is". A timeline of nothing but image cards falls
+ * back to a plain name rather than dressing a movie in a still's filename.
+ */
+export function exportName(timeline: Timeline): string {
+  const firstVideo = timeline.sources.find((s) => s.kind === 'video')
+  if (!firstVideo) return 'edit.mp4'
+  const stem = firstVideo.name.replace(/\.[^.]+$/, '') || 'edit'
+  return stem + '-edit.mp4'
 }
 
 /** The v1 path, unchanged: one source file, trimmed to the clip, re-encoded. */
@@ -150,11 +165,3 @@ export function trimForClip(clip: Clip, sourceDurationSec: number): VideoSetting
   }
 }
 
-function lookupRenderTimeline(): RenderTimelineFn | undefined {
-  // A run-time lookup, on purpose: the export is typed against the contract, but
-  // the symbol is genuinely absent from the installed package, and a compile-time
-  // import of a missing export would take the whole app down at load rather than
-  // at the moment somebody presses Export.
-  const withRenderer = media as unknown as { renderTimeline?: RenderTimelineFn }
-  return typeof withRenderer.renderTimeline === 'function' ? withRenderer.renderTimeline : undefined
-}

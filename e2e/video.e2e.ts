@@ -23,6 +23,57 @@ async function drop(page: Page, name: string, buffer: Buffer) {
 }
 
 /** The clip rectangles on the timeline, as the DOM reports them. */
+/**
+ * Press Save, capture the Blob the download hands to `URL.createObjectURL`, and
+ * read it back with the BROWSER's own decoders — `<video>` for the picture and
+ * `decodeAudioData` for the sound.
+ *
+ * Reading both matters: a renderer bug can produce a file of exactly the right
+ * length whose audio stops early, and every duration assertion would still pass.
+ */
+async function readBackExport(page: Page) {
+  return page.evaluate(async () => {
+    const captured: Blob[] = []
+    const real = URL.createObjectURL
+    URL.createObjectURL = (obj: Blob | MediaSource) => {
+      if (obj instanceof Blob) captured.push(obj)
+      return real.call(URL, obj)
+    }
+    const save = [...document.querySelectorAll('button')].find((b) => /^Save /.test(b.textContent ?? ''))
+    save?.click()
+    await new Promise((r) => setTimeout(r, 300))
+    URL.createObjectURL = real
+
+    const blob = captured[captured.length - 1]
+    const bytes = await blob.arrayBuffer()
+
+    const video = document.createElement('video')
+    video.src = real.call(URL, blob)
+    await new Promise<void>((resolve, reject) => {
+      video.onloadedmetadata = () => resolve()
+      video.onerror = () => reject(new Error('unreadable'))
+      setTimeout(() => reject(new Error('timeout')), 30_000)
+    })
+
+    const ctx = new AudioContext()
+    let audioDuration = 0
+    try {
+      const buf = await ctx.decodeAudioData(bytes.slice(0))
+      audioDuration = buf.duration
+    } finally {
+      void ctx.close()
+    }
+
+    return {
+      size: blob.size,
+      duration: video.duration,
+      width: video.videoWidth,
+      height: video.videoHeight,
+      audioDuration,
+    }
+  })
+}
+
 async function clips(page: Page) {
   return page.locator('[data-testid=clip]').evaluateAll((nodes) =>
     nodes.map((n) => ({
@@ -340,12 +391,11 @@ test.describe('Universal Video', () => {
     expect(result.size).toBeLessThan(FIXTURE_BYTES.length / 2)
   })
 
-  test('a multi-clip export says why it can’t run yet instead of failing silently', async ({ page }) => {
-    // ⚠️ TEMPORARY, and deliberately written to flip. `renderTimeline()` is not
-    // in the installed @unisim/media yet, so a two-clip export must refuse in a
-    // sentence rather than throw. When the renderer lands, this test starts
-    // failing — and that failure is the reminder to drive a real multi-clip
-    // export end to end here instead.
+  test('exports a two-clip edit, and the audio ends where the picture ends', async ({ page }) => {
+    // The proof the whole contract exists for. Cutting splits ONE clip, so the
+    // audio boundary IS the picture boundary — this drives that through the real
+    // editor and the real renderer, then reads the result back with the
+    // browser's own decoders rather than trusting what we asked for.
     await page.goto('/')
     await drop(page, 'clip.mp4', FIXTURE_BYTES)
     await page.getByLabel('Playhead').fill('1')
@@ -353,9 +403,19 @@ test.describe('Universal Video', () => {
     await expect(page.locator('[data-testid=clip]')).toHaveCount(2)
 
     await page.getByRole('button', { name: /Export this edit/ }).click()
-    await expect(page.getByText(/does not have it yet/)).toBeVisible({ timeout: 15_000 })
-    // The edit is untouched — nothing was lost by pressing the button.
-    await expect(page.locator('[data-testid=clip]')).toHaveCount(2)
+    // Wait for the render to actually finish. Compositing two clips frame by
+    // frame is real work, unlike the single-clip passthrough, so this is a
+    // generous timeout rather than the 15 s the compress path uses.
+    await expect(page.getByRole('button', { name: /^Save / })).toBeVisible({ timeout: 180_000 })
+    const result = await readBackExport(page)
+
+    // Both halves are still there, so the export is the whole original length.
+    expect(result.duration).toBeGreaterThan(1.5)
+    expect(result.audioDuration).toBeGreaterThan(1.5)
+    // Picture and sound agree. 100 ms, not 1 ms: AAC priming rides at the head
+    // because the muxer writes no edit list, and that is a known, measured
+    // offset rather than drift.
+    expect(Math.abs(result.duration - result.audioDuration)).toBeLessThan(0.1)
   })
 
   test('refuses a format it cannot read, by name, before doing any work', async ({ page }) => {

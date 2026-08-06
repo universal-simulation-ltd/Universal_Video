@@ -34,7 +34,7 @@ import {
   trimClip,
 } from '../lib/edit'
 import { planTimelineExport, type TimelinePlan } from '../lib/memory'
-import { RendererUnavailableError, exportRoute, exportTimeline } from '../lib/render'
+import { exportRoute, exportTimeline } from '../lib/render'
 import { secondsRemaining } from '../lib/eta'
 
 /**
@@ -321,12 +321,9 @@ export const useEditorStore = create<EditorState>((set, get) => {
         })
         set({ status: 'done', result })
       } catch (err) {
-        // The renderer being absent is not a failure of the edit — say so
-        // differently, and leave the timeline exactly as it was.
-        if (err instanceof RendererUnavailableError) {
-          set({ status: 'editing', progress: null, blocked: err.message })
-          return
-        }
+        // Whatever went wrong, the edit itself survives it — the timeline is
+        // left exactly as it was so the user can change a setting and try
+        // again rather than rebuild the cut.
         set({
           status: 'editing',
           progress: null,
