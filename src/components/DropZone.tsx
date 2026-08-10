@@ -1,39 +1,33 @@
-import { useRef, useState } from 'react'
+import { useFileDrop } from '@unisim/sdk'
 import { EDITOR_ACCEPT, useEditorStore } from '../stores/editorStore'
 
 // The first screen, and the only one that isn't the editor. Its job is to say
 // what this is and take some files — one is the whole compress path, several is
 // an edit, and the app does not ask which you meant.
+//
+// The drop mechanics come from the SDK, shared with Universal Compress. The
+// LOOK deliberately does not: Compress is a circle with a pill ring, this is a
+// dashed rectangle that carries three paragraphs and a capability warning, and
+// neither should be bent into the other's shape. `clickToBrowse` is OFF here
+// because this zone has its own "choose a file" button inside it, and a click
+// target wrapping a click target is ambiguous for a mouse and wrong for a
+// screen reader.
 export default function DropZone() {
   const addFiles = useEditorStore((s) => s.addFiles)
   const supported = useEditorStore((s) => s.supported)
-  const input = useRef<HTMLInputElement>(null)
-  const [over, setOver] = useState(false)
 
-  function take(files: FileList | null) {
-    const list = [...(files ?? [])]
-    if (list.length) void addFiles(list)
-  }
+  const drop = useFileDrop({ onFiles: addFiles, accept: EDITOR_ACCEPT, clickToBrowse: false })
 
   return (
     <div
-      onDragOver={(e) => { e.preventDefault(); setOver(true) }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(e) => { e.preventDefault(); setOver(false); take(e.dataTransfer.files) }}
+      {...drop.dropzoneProps}
       className={`rounded-2xl border-2 border-dashed p-10 text-center transition-colors sm:p-14 ${
-        over
+        drop.over
           ? 'border-orange-500 bg-orange-50 dark:bg-orange-950/20'
           : 'border-slate-300 bg-white hover:border-orange-400 dark:border-slate-700 dark:bg-slate-900'
       }`}
     >
-      <input
-        ref={input}
-        type="file"
-        accept={EDITOR_ACCEPT}
-        multiple
-        className="sr-only"
-        onChange={(e) => take(e.target.files)}
-      />
+      <input {...drop.inputProps} className="sr-only" />
 
       <p className="text-base font-semibold text-slate-900 dark:text-slate-100">
         Drop a video here
@@ -43,7 +37,7 @@ export default function DropZone() {
         {' '}
         <button
           type="button"
-          onClick={() => input.current?.click()}
+          onClick={drop.open}
           className="rounded font-semibold text-orange-700 underline underline-offset-2 hover:text-orange-800 focus-visible:outline-2 focus-visible:outline-orange-600 dark:text-orange-400"
         >
           choose a file

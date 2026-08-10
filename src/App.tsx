@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { UniversalAppsNavBar } from '@unisim/sdk'
+import { DropRing, UniversalAppsNavBar } from '@unisim/sdk'
 import UsageTracker from './UsageTracker'
 import AppMenu from './components/Header/AppMenu'
 import ProductLogo from './components/Header/ProductLogo'
@@ -100,10 +100,15 @@ export default function App() {
 
           {!editing && <DropZone />}
 
+          {/* The one genuinely indeterminate wait in this app. It used to be a
+              bare sentence; the ring is the suite's shared one (SDK
+              `DropRing`), small and in `busy`, so "something is happening"
+              looks the same here as it does in Universal Compress. */}
           {status === 'reading' && (
-            <p className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-[13px] text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-              Reading the file’s header…
-            </p>
+            <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-[13px] text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+              <DropRing size={34} motion="busy" aria-hidden />
+              <span>Reading the file’s header…</span>
+            </div>
           )}
 
           {editing && (
