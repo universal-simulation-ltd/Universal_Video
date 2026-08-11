@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useFileDrop } from '@unisim/sdk'
 import { clipsAt } from '../lib/edit'
 import { FIT, ZOOM_STEP } from '../lib/zoom'
 import { EDITOR_ACCEPT, selectMaxZoom, useEditorStore, type Placement } from '../stores/editorStore'
@@ -27,10 +27,14 @@ export default function Toolbar() {
   const canZoomOut = zoomFactor > FIT
   const canZoomIn = zoomFactor < maxZoom - 1e-6
 
-  const inputs = {
-    append: useRef<HTMLInputElement>(null),
-    intro: useRef<HTMLInputElement>(null),
-    outro: useRef<HTMLInputElement>(null),
+  // Three separate pickers because the file goes somewhere different in each
+  // case, and only "Add clips…" takes more than one. Same SDK mechanics as the
+  // editor's drop zone — buttons here, so no drop target and no click wrapper.
+  // Hooks can't be called from a map, hence three calls into one record.
+  const pickers: Record<Placement, ReturnType<typeof useFileDrop>> = {
+    intro: useFileDrop({ onFiles: (files) => void addFiles(files, 'intro'), accept: EDITOR_ACCEPT, multiple: false, clickToBrowse: false, disabled: busy }),
+    append: useFileDrop({ onFiles: (files) => void addFiles(files, 'append'), accept: EDITOR_ACCEPT, clickToBrowse: false, disabled: busy }),
+    outro: useFileDrop({ onFiles: (files) => void addFiles(files, 'outro'), accept: EDITOR_ACCEPT, multiple: false, clickToBrowse: false, disabled: busy }),
   }
 
   const underPlayhead = clipsAt(timeline, playheadSec).length
@@ -48,20 +52,8 @@ export default function Toolbar() {
 
       {(['intro', 'append', 'outro'] as Placement[]).map((placement) => (
         <span key={placement}>
-          <input
-            ref={inputs[placement]}
-            type="file"
-            accept={EDITOR_ACCEPT}
-            multiple={placement === 'append'}
-            className="sr-only"
-            aria-label={LABELS[placement]}
-            onChange={(e) => {
-              const files = [...(e.target.files ?? [])]
-              e.target.value = ''
-              if (files.length) void addFiles(files, placement)
-            }}
-          />
-          <Action onClick={() => inputs[placement].current?.click()} disabled={busy}>
+          <input {...pickers[placement].inputProps} className="sr-only" aria-label={LABELS[placement]} />
+          <Action onClick={pickers[placement].open} disabled={busy}>
             {LABELS[placement]}
           </Action>
         </span>
