@@ -608,3 +608,64 @@ This is the front door's appearance and its reach, not what it will take. In
 particular *"as per PDF, Images"* is about the shared **circle**, not about
 accepting PDFs — this app reads MP4, M4V and MOV, plus images as intro/outro
 cards, exactly as it did before.
+
+## 11. The app name is the switcher, not a home link
+
+The owner's brief: *"The app name on hover / mobile click should reveal the
+suite switcher dropdown, not refresh page."*
+
+**Measured before the change**, in a real Chromium: hovering the name opened the
+switcher; clicking it navigated (one full page load); and on a touch context —
+where there is no hover at all — a tap navigated and the menu never appeared. So
+on a phone the switcher was unreachable from the identity **by any gesture**.
+
+The cause is two SDK behaviours meeting. `productHomeHref` makes the navbar wrap
+the logo AND the catalogue-derived product name in a single home `<a>`. And
+`SuiteSwitcher`'s wrapper toggle begins:
+
+```js
+if (target.closest('a, button')) return   // let a child link navigate
+```
+
+which is the rule that lets a home link coexist with the dropdown on the
+desktop, and the rule that swallows every tap on a touch screen.
+
+**The fix is to drop `productHomeHref`.** The identity becomes a plain span, so
+hover opens it on the desktop and a tap toggles it on a phone. Nothing was lost
+by removing the link: this app is ONE SCREEN, so "home" was the page you are
+already on — and mid-edit that navigation reloads the app and takes the timeline
+with it, which is the worst thing a stray tap on the title bar could do.
+
+### 11.1 `SwitcherHandle`, and why it is a span with `role="button"`
+
+The home `<a>` was the only focusable thing in the identity cluster, and
+`SuiteSwitcher` opens on `onFocusCapture` — so removing it would have fixed the
+tap and quietly taken the Tab key away. `App.tsx` therefore wraps the generated
+`ProductLogo` in a focusable handle.
+
+⚠️ It is a `<span role="button">` and **not a real `<button>`**, which is the one
+thing about it that looks like a mistake. The selector above matches the TAG,
+not the role: a real button would be swallowed by the very rule that swallowed
+the anchor. Its key handler re-dispatches Enter/Space as a `click()` for the
+same reason — a click is the event the wrapper is listening for.
+
+`ProductLogo.tsx` is a GENERATED file (`scripts/app-marks/marks.mjs` in the
+platform repo); the handle lives in `App.tsx` so a regenerated mark does not
+drop it.
+
+### 11.2 Driven live
+
+The spec drives all three gestures: the identity is asserted to have no ancestor
+`<a>`, hover opens the menu, focusing the handle opens it, and — in a `hasTouch`
+context — a **tap** opens it with `framenavigated` counted and asserted to be
+**zero**. The navigation count is the assertion that matters; a menu-visible
+check alone would pass on a page that opened the menu and then reloaded.
+
+### 11.3 Worth reporting upstream
+
+This is an SDK shape, not a Video one: any app passing `productHomeHref` has the
+same dead identity on touch. Either the switcher should treat a tap on the
+identity as an open rather than a navigation on a no-hover pointer, or the
+navbar should stop wrapping the NAME in the home link and leave it on the logo
+alone. Universal PDF and Images are worth checking before this is called a
+Video-only fix.

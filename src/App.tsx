@@ -37,6 +37,41 @@ const REPO_URL = 'https://github.com/universal-simulation-ltd/Universal_Video'
  * click, and the button still says "Compress this video" when that is what it
  * is about to do.
  */
+/**
+ * The product mark, made focusable so the suite switcher still has a keyboard
+ * way in.
+ *
+ * The home `<a>` this replaces was the ONLY focusable thing in the identity
+ * cluster, and `SuiteSwitcher` opens on `onFocusCapture` — so dropping the link
+ * without this would have fixed the tap and quietly taken the Tab key away.
+ *
+ * ⚠️ `role="button"` on a span rather than a real `<button>`, which is the one
+ * thing here that looks like a mistake and isn't: the switcher's wrapper bails
+ * out of its toggle on `target.closest('a, button')`, a selector matching the
+ * TAG, not the role. A real button would be swallowed by the same rule that
+ * swallowed the anchor. The key handler re-dispatches as a click for the same
+ * reason — that is the event the wrapper is listening for.
+ */
+function SwitcherHandle() {
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      aria-haspopup="true"
+      aria-label="Switch product"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          e.currentTarget.click()
+        }
+      }}
+      className="inline-flex rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600"
+    >
+      <ProductLogo />
+    </span>
+  )
+}
+
 export default function App() {
   const status = useEditorStore((s) => s.status)
   const error = useEditorStore((s) => s.error)
@@ -74,11 +109,21 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-100 dark:bg-slate-950">
+      {/* No `productHomeHref`, deliberately — see SwitcherHandle below. With it
+          set, the SDK wraps the logo and the product name in one home `<a>`,
+          and `SuiteSwitcher`'s wrapper skips any click landing on an `<a>` or a
+          `<button>` so a child link can still navigate. The result was that the
+          app name opened the switcher on HOVER and navigated on CLICK — which
+          on a touch screen, where there is no hover at all, meant the switcher
+          could not be reached from the identity by any gesture, and a tap
+          reloaded the page instead. Mid-edit that reload takes the timeline
+          with it, and this app is one screen, so "home" was never anywhere
+          else. Without the prop the identity is a plain span: hover opens it on
+          the desktop and a tap toggles it on a phone. */}
       <UniversalAppsNavBar
         contentClassName={CONTAINER}
         product="video"
-        productLogo={<ProductLogo />}
-        productHomeHref={import.meta.env.BASE_URL}
+        productLogo={<SwitcherHandle />}
         actions={<AppMenu />}
         actionsLabel="Video"
         suiteSwitcherIconSrc={`${import.meta.env.BASE_URL}unisim-icon.png`}

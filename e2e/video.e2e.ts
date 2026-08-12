@@ -215,6 +215,46 @@ test.describe('Universal Video', () => {
     await context.close()
   })
 
+  test('the app name opens the suite switcher rather than reloading the page', async ({ page, browser }) => {
+    await page.goto('/')
+
+    // The identity is NOT a link. `SuiteSwitcher` skips any click that lands on
+    // an `<a>` or a `<button>`, so a home link there means the name can only
+    // ever navigate — and on a touch screen, with no hover, that left the
+    // switcher unreachable and a tap reloading the app mid-edit.
+    const name = page.getByText('Universal Video', { exact: true }).first()
+    await expect(name).toBeVisible()
+    expect(await name.evaluate((el) => !!el.closest('a'))).toBe(false)
+
+    await name.hover()
+    await expect(page.getByRole('menu')).toBeVisible()
+
+    // The keyboard still gets in. The home anchor used to be the only focusable
+    // thing in the identity, and the switcher opens on focus.
+    const handle = page.getByRole('button', { name: 'Switch product' })
+    await handle.focus()
+    await expect(page.getByRole('menu')).toBeVisible()
+
+    // And the gesture that has no hover behind it: a tap, on a touch screen.
+    const touch = await browser.newContext({
+      hasTouch: true, isMobile: true, viewport: { width: 390, height: 800 },
+    })
+    const mobile = await touch.newPage()
+    let navigations = 0
+    mobile.on('framenavigated', (f) => {
+      if (f === mobile.mainFrame()) navigations += 1
+    })
+    await mobile.goto('/')
+    navigations = 0
+
+    await mobile.getByText('Universal Video', { exact: true }).first().tap()
+    await expect(mobile.getByRole('menu')).toBeVisible()
+    // The whole point: the menu came up and the page did not go anywhere.
+    expect(navigations).toBe(0)
+
+    await touch.close()
+  })
+
   test('the front door is the suite’s circle, and a file let go anywhere lands in it', async ({ page }) => {
     await page.goto('/')
 
