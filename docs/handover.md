@@ -1,8 +1,18 @@
 # Universal Video — handover
 
 **State: v2 — a MULTI-TRACK EDITOR with a chosen output frame. It builds, lints,
-passes 121 unit tests and 16 Playwright specs driven headlessly against real
-MP4s. Not deployed. Local commits only.**
+passes 121 unit tests and 18 Playwright specs driven headlessly against real
+MP4s. LIVE at `opensource.unisim.co.uk/video`.**
+
+⚠️ **This header said "Not deployed. Local commits only." until 2026-08-12, long
+after it stopped being true**, and §12 step 3 said the same. It cost a session:
+the ring in §10 was built, left on a branch, and reported as unshippable because
+this file said there was nowhere to ship it. **The app is a Git-connected
+Cloudflare Pages project (`unisim-video`) and every push to `main` deploys it** —
+about a minute, no workflow file in this repo, nothing to run by hand. There is
+no `.github/workflows/` here and that is not a sign it doesn't deploy; the
+connection lives in the Pages project. Preview URLs are built for branches too,
+which is what made a branch feel shipped.
 
 `renderTimeline()` landed in `@unisim/media` **0.3.1** and this app calls it, so
 a full multi-clip export works — §8.4's "blocked" note is closed. A single whole
@@ -187,16 +197,15 @@ removes one of the two. The remaining copy cannot go without streaming to disk.
 2. **Do not push `Universal_Converter` before step 1.** Its commit is local and
    deliberately unpushed. A push to `main` deploys, and the build will fail on the
    missing dependency.
-3. **Deploy this app.** Not done, deliberately — no Cloudflare Pages project, no
-   remote, no push. It needs: a Pages project, a `TARGETS` entry for `/video` in
-   `backoffice/opensource-portal/src/worker.js`, and a tile in the portal's
-   `public/index.html`. `public/_redirects` and `base: '/video/'` are already
-   written for it.
-4. **Add `video` to the SDK's `DEFAULT_UNIVERSAL_APPS_PRODUCTS`** (glyph and
-   `category: 'everyday'`), then **delete `src/lib/catalogue.tsx`** and drop the
-   `products` prop from `App.tsx`. The shim exists only because that entry is
-   missing; it has a clean exit and the file says so. Universal Beam is waiting
-   on exactly the same change.
+3. ~~**Deploy this app.**~~ **DONE, and done well before this list was updated.**
+   The `unisim-video` Pages project is Git-connected, `'/video'` is in the
+   `TARGETS` map in `backoffice/opensource-portal/src/worker.js`, and the portal
+   tile exists. `public/_redirects` and `base: '/video/'` were already written.
+   Verified live on 2026-08-12 in a real browser.
+4. ~~**Add `video` to the SDK's `DEFAULT_UNIVERSAL_APPS_PRODUCTS`**~~ **DONE.**
+   `video` is in the SDK catalogue with its glyph, `src/lib/catalogue.tsx` is
+   deleted and the `products` prop is gone from `App.tsx`. Universal Beam was
+   waiting on the same change.
 5. **Verify a signed-in visit inserts a `usage_events` row.** The enum value
    exists; the insert path is unproven end to end. Two minutes, and it is the
    check that was skipped for Converter and USB.
