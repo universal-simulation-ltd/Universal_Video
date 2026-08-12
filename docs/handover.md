@@ -10,7 +10,8 @@ clip in its own frame still takes the fast v1 `convertVideo()` path; everything
 else, **including any reframe**, goes to the renderer (§9).
 
 Written 2026-08-06. §§1–7 are the session that built v1 — still true except
-where §8 says otherwise; §8 is the editor; §9 is the output frame.
+where §8 says otherwise; §8 is the editor; §9 is the output frame; §10 is the
+front door.
 
 ---
 
@@ -551,3 +552,59 @@ being black is what proves it was letterboxed.**
   the picture and take the needle out of line with it. If it is ever fixed, the
   timeline viewport has to move with it, and the alignment spec is the check.
 - **No fill mode.** See §9.3. Report it as a request; don't add it quietly.
+
+## 10. The front door is the suite's circle
+
+The owner's brief: *"This should use the generic circle drop for uploads as per
+PDF, Images etc."*
+
+`DropZone.tsx` was a dashed rectangle with its own "choose a file" button, on the
+argument — written into the file — that the drop MECHANICS are shared but the
+LOOK is per-app. The mechanics half of that was already true (`useFileDrop` came
+from the SDK); the look half is what this closes. Universal PDF, Universal Images
+and Universal Compress all take a file through the same ring, the SDK ships it as
+**`DropRing`**, and its own doc comment says it was lifted out of Compress *"so
+Video and the rest can use it"*. A visitor arriving from a sibling app should not
+have to learn a second front door. It is also the ring the "reading the file's
+header" state already used (`App.tsx`), so the target and the wait now match.
+
+### 10.1 Three things the ring forces, and why the file looks like it does
+
+- **`clickToBrowse` is ON and there is no button inside the circle.** `DropRing`
+  sets `pointer-events: none` on its centre so nothing there can ever swallow a
+  drop — which means a nested button would be dead to the mouse. The words
+  *"or choose a file"* are words; the whole circle is the control, and its
+  accessible name is `Drop a video here, or choose a file`.
+- **⚠️ The ring's interior is painted `#ffffff` by the SDK in BOTH themes.** The
+  text inside it is therefore fixed dark and carries no `dark:` variant. Adding
+  one puts white text on white. The prose and the encoder warning sit *below* the
+  ring, outside the target, where the dark variants are correct — and where they
+  fit, which they do not in a ~220 px centre.
+- **The `<input>` is outside the zone, not inside it.** With a click-to-browse
+  zone, an input nested within it receives `open()`'s programmatic click and
+  bubbles it straight back into the zone's own `onClick` — and the only thing
+  between that and an endless loop is the browser's click-in-progress guard.
+  Moving the input out removes the question. There is an e2e assertion that one
+  click on the ring produces exactly **one** click on the picker.
+
+### 10.2 Page-wide, which is new behaviour and not only a repaint
+
+`pageWide` is on, paired with the SDK's **`DropAnywhere`** hint — the other half
+of the pattern PDF and Images established. The circle is a target, not a wall: a
+file let go over the margin is taken rather than lost. This is worth more here
+than the tidiness of it, because a drop that *nothing* handles makes the browser
+navigate to the file, and in a local-first app that throws away the tab and the
+edit with it. The hint is driven from `pageOver`, not `over`, so it never covers
+a ring that is already lighting up on its own.
+
+Driven live, in Chromium: the ring is present by its accessible name, one click
+opens the picker exactly once, and a `drop` dispatched on the **footer** — with
+the ring hundreds of pixels away — still puts a clip on the timeline.
+
+### 10.3 What did not change
+
+The accepted types (`EDITOR_ACCEPT`), `addFiles`, the refusals, and the probe.
+This is the front door's appearance and its reach, not what it will take. In
+particular *"as per PDF, Images"* is about the shared **circle**, not about
+accepting PDFs — this app reads MP4, M4V and MOV, plus images as intro/outro
+cards, exactly as it did before.

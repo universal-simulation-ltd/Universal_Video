@@ -215,6 +215,50 @@ test.describe('Universal Video', () => {
     await context.close()
   })
 
+  test('the front door is the suite’s circle, and a file let go anywhere lands in it', async ({ page }) => {
+    await page.goto('/')
+
+    // The same ring Universal PDF, Images and Compress open with. The WHOLE
+    // circle is the button — `DropRing` switches pointer events off in its
+    // centre so nothing there can swallow a drop, which means a nested button
+    // would be dead to the mouse — so the accessible name has to carry both
+    // halves of what it does.
+    const ring = page.getByRole('button', { name: 'Drop a video here, or choose a file' })
+    await expect(ring).toBeVisible()
+
+    // Clicking it opens the picker exactly ONCE. The `<input>` is deliberately
+    // outside the zone: inside it, the click that opens the dialog bubbles back
+    // into the zone's own handler, and the only thing between that and an
+    // endless loop is the browser's re-entrancy guard.
+    const opened = await page.evaluate(async () => {
+      const input = document.querySelector('input[type=file]') as HTMLInputElement
+      let n = 0
+      input.addEventListener('click', (e) => {
+        n += 1
+        e.preventDefault() // don't hand a headless browser a native file dialog
+      })
+      ;(document.querySelector('[data-unisim-dropzone]') as HTMLElement).click()
+      await new Promise((r) => setTimeout(r, 100))
+      return n
+    })
+    expect(opened).toBe(1)
+
+    // And the circle is a target, not a wall. Let go over the footer, hundreds
+    // of pixels from the ring, and the file is still taken — where a page that
+    // ignored it would let the browser navigate to the file and throw the tab
+    // away, which in a local-first app means throwing the work away.
+    await page.evaluate(async (data) => {
+      const bin = Uint8Array.from(atob(data), (c) => c.charCodeAt(0))
+      const dt = new DataTransfer()
+      dt.items.add(new File([bin], 'clip.mp4', { type: 'video/mp4' }))
+      window.dispatchEvent(new DragEvent('dragenter', { dataTransfer: dt, bubbles: true }))
+      const footer = document.querySelector('footer') as HTMLElement
+      footer.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true }))
+    }, FIXTURE_BYTES.toString('base64'))
+
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(1)
+  })
+
   test('reads a file’s header and predicts the output before anything runs', async ({ page }) => {
     await page.goto('/')
     await drop(page, 'clip.mp4', FIXTURE_BYTES)
