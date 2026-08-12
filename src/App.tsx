@@ -72,6 +72,27 @@ function SwitcherHandle() {
   )
 }
 
+/**
+ * The one genuinely indeterminate wait in this app.
+ *
+ * It used to be a bare sentence; the ring is the suite's shared one (SDK
+ * `DropRing`), small and in `busy`, so "something is happening" looks the same
+ * here as it does in Universal Compress.
+ *
+ * Takes `show` rather than being called conditionally because it appears in
+ * BOTH branches of the front-door/editor split below — reading a header happens
+ * on arrival and again every time a clip is added mid-edit.
+ */
+function Reading({ show }: { show: boolean }) {
+  if (!show) return null
+  return (
+    <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-[13px] text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+      <DropRing size={34} motion="busy" aria-hidden />
+      <span>Reading the file’s header…</span>
+    </div>
+  )
+}
+
 export default function App() {
   const status = useEditorStore((s) => s.status)
   const error = useEditorStore((s) => s.error)
@@ -155,21 +176,30 @@ export default function App() {
             </div>
           )}
 
-          {!editing && <DropZone />}
+          {/* The front door is two columns, the shape Universal Compress and
+              Universal Converter already use: the thing you came to do on the
+              left, what the app is on the right. Before this, `Honesty`'s nine
+              paragraphs sat UNDER the ring at full width and pushed everything
+              else off the first screen — the drop target was competing with an
+              essay for the same column. Beside it, and collapsed to one line a
+              row, it reads as a spec sheet next to the tool.
 
-          {/* The one genuinely indeterminate wait in this app. It used to be a
-              bare sentence; the ring is the suite's shared one (SDK
-              `DropRing`), small and in `busy`, so "something is happening"
-              looks the same here as it does in Universal Compress. */}
-          {status === 'reading' && (
-            <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-[13px] text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-              <DropRing size={34} motion="busy" aria-hidden />
-              <span>Reading the file’s header…</span>
+              Both columns collapse to one below `lg`, ring first, which is the
+              right order on a phone: the target, then the reading. */}
+          {!editing ? (
+            <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(300px,0.85fr)]">
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-6 sm:px-8 dark:border-slate-800 dark:bg-slate-900">
+                  <DropZone />
+                </div>
+                <Reading show={status === 'reading'} />
+              </div>
+
+              <Honesty />
             </div>
-          )}
-
-          {editing && (
+          ) : (
             <>
+              <Reading show={status === 'reading'} />
               <Player />
               <Toolbar />
               <TimelineView />
@@ -180,10 +210,9 @@ export default function App() {
                   {status === 'exporting' ? <Progress /> : status === 'done' ? <ResultCard /> : <ExportPanel />}
                 </div>
               </div>
+              <Honesty />
             </>
           )}
-
-          <Honesty />
         </div>
       </main>
 

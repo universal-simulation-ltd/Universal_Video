@@ -299,6 +299,68 @@ test.describe('Universal Video', () => {
     await expect(page.locator('[data-testid=clip]')).toHaveCount(1)
   })
 
+  test('the front door is two columns, and every honesty row opens on click', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await page.goto('/')
+
+    // Two columns, the shape Compress and Converter already use: the ring on
+    // the left, "what it does" on the right. Asserted GEOMETRICALLY rather than
+    // by class name — the point is that they are side by side, and a class
+    // assertion would pass on a grid that had silently collapsed.
+    const ring = page.getByRole('button', { name: 'Drop a video here, or choose a file' })
+    const box = page.getByRole('heading', { name: /What it does/ })
+    const ringBox = (await ring.boundingBox())!
+    const honestyBox = (await box.boundingBox())!
+    expect(honestyBox.x).toBeGreaterThan(ringBox.x + ringBox.width)
+
+    // Collapsed by default: the summary is on the page, the full reasoning is
+    // not. This is the whole point of the box being succinct — nine paragraphs
+    // in the narrow column buried the ring.
+    const row = page.getByRole('button', { name: /^Has a ceiling/ })
+    await expect(row).toHaveAttribute('aria-expanded', 'false')
+    await expect(page.getByText('a five-clip edit costs five sources')).toHaveCount(0)
+
+    // ...and one click reveals it. Nothing was deleted when the box shrank.
+    await row.click()
+    await expect(row).toHaveAttribute('aria-expanded', 'true')
+    await expect(page.getByText('a five-clip edit costs five sources')).toBeVisible()
+
+    // Rows are independent — opening one does not open or close the others.
+    const other = page.getByRole('button', { name: /^Reads/ })
+    await expect(other).toHaveAttribute('aria-expanded', 'false')
+
+    await row.click()
+    await expect(row).toHaveAttribute('aria-expanded', 'false')
+
+    // Every row has to be openable, not just the one sampled above.
+    const rows = page.locator('section:has(h2) li button[aria-expanded]')
+    await expect(rows).toHaveCount(9)
+  })
+
+  test('the two columns stack ring-first on a phone', async ({ browser }) => {
+    // Below `lg` the grid collapses, and the ORDER matters: somebody on a phone
+    // should meet the drop target before the spec sheet, not scroll past nine
+    // rows to reach it.
+    const context = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+      hasTouch: true,
+      isMobile: true,
+    })
+    const page = await context.newPage()
+    await page.goto('/')
+
+    const ring = (await page
+      .getByRole('button', { name: 'Drop a video here, or choose a file' })
+      .boundingBox())!
+    const honesty = (await page.getByRole('heading', { name: /What it does/ }).boundingBox())!
+
+    expect(honesty.y).toBeGreaterThan(ring.y + ring.height)
+    // Same column, not side by side — i.e. it really did stack.
+    expect(Math.abs(honesty.x - ring.x)).toBeLessThan(ring.width)
+
+    await context.close()
+  })
+
   test('reads a file’s header and predicts the output before anything runs', async ({ page }) => {
     await page.goto('/')
     await drop(page, 'clip.mp4', FIXTURE_BYTES)

@@ -45,7 +45,10 @@ export default function DropZone() {
   })
 
   return (
-    <div className="flex flex-col items-center py-6 text-center sm:py-10">
+    // No padding of its own: since the two-column front door landed this sits
+    // inside a card in `App.tsx` that owns the padding, and having both meant
+    // the ring was inset twice.
+    <div className="flex flex-col items-center text-center">
       {/* Outside the ring, so the picker is never the thing a drop lands on. */}
       <input {...drop.inputProps} className="sr-only" />
 

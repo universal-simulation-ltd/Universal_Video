@@ -1,7 +1,7 @@
 # Universal Video — handover
 
 **State: v2 — a MULTI-TRACK EDITOR with a chosen output frame. It builds, lints,
-passes 121 unit tests and 18 Playwright specs driven headlessly against real
+passes 131 unit tests and 20 Playwright specs driven headlessly against real
 MP4s. LIVE at `opensource.unisim.co.uk/video`.**
 
 ⚠️ **This header said "Not deployed. Local commits only." until 2026-08-12, long
@@ -617,6 +617,49 @@ This is the front door's appearance and its reach, not what it will take. In
 particular *"as per PDF, Images"* is about the shared **circle**, not about
 accepting PDFs — this app reads MP4, M4V and MOV, plus images as intro/outro
 cards, exactly as it did before.
+
+### 10.4 Two columns, and the honesty box collapsed to fit one
+
+Added 2026-08-12, after the ring landed. Owner ask: *"make the page 2 column as
+per convert / compress etc — make the content of second box What it does, and
+what it deliberately doesn't more succinct."*
+
+**The front door is now `lg:grid-cols-[minmax(0,1.55fr)_minmax(300px,0.85fr)]`,
+the same string Universal Compress uses.** Ring on the left in a white card,
+`Honesty` on the right. Below `lg` they stack, ring first — there is an e2e
+spec asserting that order geometrically, because a collapsed grid and a
+correctly stacked one look identical to a class-name assertion.
+
+**Why the box had to shrink to make the column work.** `Honesty` is nine
+paragraphs. At full width under the ring that was merely long; in a ~330px
+column it was a wall of text three screens tall, and the drop target — the thing
+somebody actually arrives to use — lost the page to it. So each row now leads
+with a written one-sentence `summary` and keeps its full text behind a
+disclosure. **Nothing was deleted.** Every word is still there, one click away,
+and the e2e spec opens a row and asserts the full text appears.
+
+Three things that shaped the implementation, all in `Honesty.tsx`:
+
+- ⚠️ **The summaries are WRITTEN, not sliced.** The obvious reading of "a
+  character limit and then `...`" is to cut the existing text at N characters,
+  and it does not survive contact with this file: the rows are rich — `<strong>`,
+  `<em>`, a link to Universal Recorder — and a character count walked through
+  JSX either drops the markup or cuts a tag in half. `lib/summary.ts` still caps
+  each summary at `SUMMARY_LIMIT` and appends `…` at a word boundary, but it is
+  a **guard** against a summary someone lengthens later, not the mechanism. It
+  has its own unit tests (10) covering the word boundary, the long-token hard
+  cut and the trailing-punctuation strip.
+- ⚠️ **It stopped being a `<dl>` and cannot go back.** A disclosure needs a
+  `<button>` beside the term, and the only children HTML permits inside `<dl>`
+  are `<dt>`, `<dd>` and a `<div>` wrapping a group of them — a button there is
+  invalid. It is a `<ul>` of nine facts now.
+- **The whole row is the button, not the ellipsis.** An ellipsis is a ~10px
+  target and announces nothing; the row carries `aria-expanded` +
+  `aria-controls`, and its accessible name is the summary. The chevron rotates
+  rather than swapping glyph so opening a row doesn't reflow it.
+
+`DropZone` lost its own `py-6 sm:py-10` in the same change — the card in
+`App.tsx` owns the padding now, and having both inset the ring twice.
 
 ## 11. The app name is the switcher, not a home link
 

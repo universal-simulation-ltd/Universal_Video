@@ -1,3 +1,6 @@
+import { useId, useState } from 'react'
+import { summarise } from '../lib/summary'
+
 // What this app deliberately cannot do, on the page rather than only in the
 // README. Every row is either a browser limit or a decision, and each one has a
 // reason a user can check.
@@ -9,39 +12,78 @@
 // stacked tracks and transitions. What has NOT changed is everything below
 // about uploading, the memory ceiling and the browsers this works in, and the
 // new rows say where the editing stops.
+//
+// **Every row is collapsed to a sentence and opens on click** (2026-08-12).
+// This box moved into the right-hand column of a two-column front door, next to
+// the drop ring, and nine paragraphs in a ~330px column made the page a wall of
+// text — the ring is what somebody arrives to use, and it was losing. So each
+// row now leads with a written `summary` (one sentence, two lines at that
+// width) and keeps its full text behind a disclosure. Nothing was deleted;
+// every word below is still on the page, one click away.
+//
+// Two things worth knowing before you edit a row:
+//  • The summary is WRITTEN, not sliced off the front of the full text — the
+//    full text is rich (bold, a link, `<em>`) and a character count through JSX
+//    would cut a tag in half. `summarise()` still caps it, as a guard against a
+//    summary growing past its line; see `lib/summary.ts` for why it is a guard
+//    and not the mechanism.
+//  • The whole line is the button, not the ellipsis. An ellipsis is a ~10px
+//    target and reads as nothing to a screen reader; the row carries a real
+//    `aria-expanded` and its accessible name is the summary.
+//
+// ⚠️ This was a `<dl>` of `<dt>`/`<dd>` pairs and can't go back to being one.
+// A disclosure needs a `<button>` next to the term, and inside a `<dl>` the
+// only permitted children are `<dt>`, `<dd>` and a `<div>` wrapping them — a
+// button is not valid there. It is a `<ul>` of nine facts instead.
 export default function Honesty() {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 text-[12.5px] leading-relaxed dark:border-slate-800 dark:bg-slate-900">
       <h2 className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">
         What it does, and what it deliberately doesn’t
       </h2>
+      <p className="mt-1 text-[11.5px] text-slate-500 dark:text-slate-500">
+        Nine straight answers. Open one for the reasoning.
+      </p>
 
-      <dl className="mt-3 space-y-2.5 text-slate-600 dark:text-slate-400">
-        <Row term="Reads">
+      <ul className="mt-3 divide-y divide-slate-100 dark:divide-slate-800">
+        <Row term="Reads" summary="MP4, M4V and MOV — not MKV, WebM, AVI or WMV.">
           MP4, M4V and MOV. <strong className="font-semibold">Not MKV, WebM, AVI or WMV</strong>, and
           not fragmented MP4. MKV needs a different container reader; AVI and WMV
           need one <em>and</em> a codec the browser doesn’t have, so a reader would
           buy a different error message rather than a working conversion.
         </Row>
-        <Row term="Writes">
+
+        <Row term="Writes" summary="MP4 — H.264 with AAC sound, the one format that plays everywhere.">
           MP4 — H.264 video with AAC sound, which plays on everything. One output
           format, because it is the one that always works.
         </Row>
-        <Row term="Edits">
+
+        <Row
+          term="Edits"
+          summary="A timeline: trim, cut, slide, stack tracks, intro and outro cards, crossfades."
+        >
           A timeline: trim either end of a clip, cut at the playhead, delete,
           slide clips around, stack them on more than one track, put an image or
           a video on the front or the end, and crossfade or fade to black
           between them. A clip carries its own sound, so cutting the picture
           cuts the sound at the same instant — they cannot come apart.
         </Row>
-        <Row term="Reframes">
+
+        <Row
+          term="Reframes"
+          summary="Pick the output shape; anything else is centred in it, the rest filled black."
+        >
           Pick the shape the movie is written at — the size it was filmed,
           1920×1080, 1080×1920, square, or a size you type. Anything that isn’t
           that shape is <strong className="font-semibold">centred in it and the
           rest filled black</strong>: an upright phone clip in a 1920×1080 frame
           keeps all of its picture and gains a black bar down each side.
         </Row>
-        <Row term="Doesn’t edit">
+
+        <Row
+          term="Doesn’t edit"
+          summary="No filters, colour, text, speed ramps or keyframes — and reframing never crops."
+        >
           No filters or colour, no text, titles or watermarks, no speed ramps, no
           keyframes, and no detaching a clip’s audio from its picture. Transitions
           are crossfade and fade to black — the two that are honestly renderable
@@ -49,7 +91,8 @@ export default function Honesty() {
           letterboxes and never crops: there is no zoom-to-fill, and no moving or
           scaling a clip inside the frame.
         </Row>
-        <Row term="Doesn’t record">
+
+        <Row term="Doesn’t record" summary="Screen and webcam capture is Universal Recorder’s job.">
           Screen and webcam capture is{' '}
           <a
             href="https://opensource.unisim.co.uk/recorder"
@@ -59,13 +102,21 @@ export default function Honesty() {
           </a>
           . Adjacent products shouldn’t grow into each other.
         </Row>
-        <Row term="Doesn’t upload — ever">
+
+        <Row
+          term="Doesn’t upload — ever"
+          summary="No server fallback for the big ones, and there never will be."
+        >
           There is no “we’ll do the big ones on our server” fallback, and there
           will not be one. It is the whole claim; one exception would make every
           other sentence here false. Open your browser’s network tab and watch:
           nothing goes out.
         </Row>
-        <Row term="Has a ceiling">
+
+        <Row
+          term="Has a ceiling"
+          summary="Every clip is held in memory, so an edit that won’t fit is refused up front."
+        >
           Every clip on the timeline is read into memory in full, and the
           finished file is assembled there too — so a five-clip edit costs five
           sources plus the output, not one. That is a real limit, roughly a
@@ -74,7 +125,11 @@ export default function Honesty() {
           why an edit that won’t fit is refused up front rather than half way
           through.
         </Row>
-        <Row term="Needs the right browser">
+
+        <Row
+          term="Needs the right browser"
+          summary="Chrome and Edge. Firefox has no H.264 encoder; Safari 16.4+ untested."
+        >
           Chrome and Edge, which is where this is tested. Safari 16.4+ has
           WebCodecs and ought to work, but we have not run it there and would
           rather say so than let you find out. Firefox has no WebCodecs H.264
@@ -82,16 +137,56 @@ export default function Honesty() {
           the end of a long wait — and whatever browser you bring, support is
           probed before anything runs.
         </Row>
-      </dl>
+      </ul>
     </section>
   )
 }
 
-function Row({ term, children }: { term: string; children: React.ReactNode }) {
+function Row({
+  term,
+  summary,
+  children,
+}: {
+  term: string
+  summary: string
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  const line = summarise(summary)
+  const panelId = useId()
+
   return (
-    <div className="sm:flex sm:gap-3">
-      <dt className="shrink-0 font-semibold text-slate-800 sm:w-40 dark:text-slate-200">{term}</dt>
-      <dd className="min-w-0">{children}</dd>
-    </div>
+    <li className="py-2 first:pt-0 last:pb-0">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-controls={panelId}
+        className="group flex w-full items-start gap-2 rounded text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="font-semibold text-slate-800 dark:text-slate-200">{term}</span>
+          <span className="text-slate-400 dark:text-slate-600"> — </span>
+          <span className="text-slate-600 group-hover:text-slate-900 dark:text-slate-400 dark:group-hover:text-slate-200">
+            {line.text}
+          </span>
+        </span>
+        {/* Rotates rather than swapping glyph, so the control doesn't reflow
+            the row when it opens. */}
+        <svg
+          viewBox="0 0 12 12"
+          aria-hidden
+          className={`mt-1 h-3 w-3 shrink-0 text-slate-400 transition-transform group-hover:text-orange-600 ${open ? 'rotate-90' : ''}`}
+        >
+          <path d="M4 2l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {open && (
+        <div id={panelId} className="mt-1.5 text-slate-600 dark:text-slate-400">
+          {children}
+        </div>
+      )}
+    </li>
   )
 }
