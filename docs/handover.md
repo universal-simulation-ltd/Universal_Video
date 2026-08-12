@@ -713,11 +713,25 @@ context — a **tap** opens it with `framenavigated` counted and asserted to be
 **zero**. The navigation count is the assertion that matters; a menu-visible
 check alone would pass on a page that opened the menu and then reloaded.
 
-### 11.3 Worth reporting upstream
+### 11.3 ✅ Fixed upstream in the SDK — 2026-08-12, `@unisim/sdk@0.100.0`
 
-This is an SDK shape, not a Video one: any app passing `productHomeHref` has the
-same dead identity on touch. Either the switcher should treat a tap on the
-identity as an open rather than a navigation on a no-hover pointer, or the
-navbar should stop wrapping the NAME in the home link and leave it on the logo
-alone. Universal PDF and Images are worth checking before this is called a
-Video-only fix.
+This was an SDK shape, not a Video one: all **13** apps passing
+`productHomeHref` had the same dead identity on touch. Of the two options
+floated here, the second was taken — **`UniversalAppsNavBar` no longer wraps
+the NAME in the home link.** The mark carries the `<a>`; the name is a plain
+`<span>` that falls through to `SuiteSwitcher`'s wrapper toggle, so it opens on
+a tap with no hover available, and on a desktop click too.
+
+**What that means for Video specifically.** Everything in §11 and §11.1 above
+still describes the bug and the reasoning correctly, but the *workaround* is now
+redundant: an app on 0.100.0 can pass `productHomeHref` and still have a working
+switcher. Video's `SwitcherHandle` and its dropped `productHomeHref` were left
+in place on purpose — for a one-screen editor, "home" is the page you are
+already on and the reload discards the timeline, so having no home link may
+still be right here. It is a product decision now, not a workaround. Do not
+revert it as cleanup without deciding that question.
+
+⚠️ **The `<span role="button">` note in §11.1 is still load-bearing SDK-wide**,
+for the same reason it was here: `SuiteSwitcher`'s guard matches the TAG
+(`closest('a, button')`), so promoting a switcher trigger to a real `<button>`
+gets it swallowed by the very rule being worked around.

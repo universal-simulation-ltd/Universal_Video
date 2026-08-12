@@ -130,7 +130,7 @@ export default function ExportPanel() {
                 onClick={() => update({ quality: q.value })}
                 className={`rounded-lg px-3 py-2 text-[13px] font-semibold transition-colors disabled:opacity-50 ${
                   settings.quality === q.value
-                    ? 'bg-orange-600 text-white'
+                    ? 'bg-orange-700 text-white'
                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
                 }`}
               >
@@ -193,7 +193,7 @@ export default function ExportPanel() {
                   onClick={() => update({ audioBitrateKbps: b })}
                   className={`rounded-lg px-2 py-1.5 text-[12px] font-semibold tabular-nums transition-colors disabled:opacity-50 ${
                     settings.audioBitrateKbps === b
-                      ? 'bg-orange-600 text-white'
+                      ? 'bg-orange-700 text-white'
                       : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
                   }`}
                 >
@@ -243,7 +243,7 @@ export default function ExportPanel() {
         type="button"
         onClick={() => void exportEdit()}
         disabled={stopped}
-        className="w-full rounded-2xl bg-orange-600 px-5 py-4 text-left text-white transition-colors hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
+        className="w-full rounded-2xl bg-orange-700 px-5 py-4 text-left text-white transition-colors hover:bg-orange-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
       >
         <span className="block text-[15px] font-semibold">
           {refused || supported === false

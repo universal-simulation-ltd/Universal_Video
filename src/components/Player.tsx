@@ -185,7 +185,7 @@ export default function Player() {
           type="button"
           onClick={() => setPlaying(!playing)}
           aria-label={playing ? 'Pause' : 'Play'}
-          className="shrink-0 rounded-lg bg-orange-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-orange-700"
+          className="shrink-0 rounded-lg bg-orange-700 px-4 py-2 text-[13px] font-semibold text-white hover:bg-orange-800"
         >
           {playing ? 'Pause' : 'Play'}
         </button>
