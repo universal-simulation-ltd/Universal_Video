@@ -812,3 +812,84 @@ frame to landscape and re-asserts the original alignment. `pictureWidth()` has
 unit tests of its own in `src/lib/layout.test.ts`, including that 4:3 does not
 move and that a nonsense aspect falls back to the full width rather than
 collapsing the box.
+
+---
+
+## 13. The export that stopped at 93% — 2026-08-13
+
+Reported with a screenshot: *"Jammed on processing. It was a portrait video being
+redimensioned to be 16:9."* — 175 of 188 frames, 3.2 MB written, "about 0:00
+left", and it never moved again.
+
+**Reproduced**: the owner's own 1080×1920 file, `Output frame` → landscape, in
+real Chrome — **4 runs in 5 hung**, always in the same place, always near the
+end. Headless Chromium never hung once, which is why nothing here had caught it.
+
+### 13.1 What it was
+
+`VideoClipReader` (in `@unisim/media`, `render.ts`) ended its feed with a bare
+`await this.decoder.flush()`. A hardware H.264 decoder emits into a **fixed pool
+of picture buffers**; a `VideoFrame` holds one until `close()`; and `flush()`
+cannot resolve until every queued decode has produced output. Wait on it while
+holding frames and neither side can move — the decoder needs buffers we are
+holding, and we are holding them because we are waiting for the decoder.
+
+Instrumented at the moment it wedged:
+
+```
+[DBG] decoder.flush() start, decQ= 9, pending= 3, current= true
+[DBG] flush still pending: decQ= 4  pending= 8  ENC encQ=0 chunks=170
+[DBG] flush still pending: decQ= 4  pending= 8  ENC encQ=0 chunks=170   (forever)
+```
+
+Eight frames held, four decodes queued, both codecs idle. It bit at the END of a
+clip because that is where the flush is, and never on the 320×240 fixtures
+because a small frame never runs the pool dry.
+
+### 13.2 The fix, and two more hangs found under it
+
+The flush is **started and not awaited**: `fill()` hands back whatever is already
+decoded, and waits only when it is holding nothing — then on `Promise.race([the
+flush, the next frame])`. Every frame is consumed and closed before the next
+wait, so the pool is never starved.
+
+Two more, both found by fixing the first:
+
+- **A lost wake-up.** The first attempt rang a signal when the flush settled and
+  waited on the signal. By the last frame the flush has usually settled already,
+  and *a bell rung to an empty room is not heard* — it hung at **187 of 188,
+  every single run**. The flush PROMISE is in the race now, not just its signal.
+  Any one-shot signal in this file needs the same treatment.
+- **A dead codec sends no `dequeue`.** Both back-pressure waits could park on an
+  event that could never arrive again, with the real error sitting unread in
+  `failure`. Errors now wake the waiter, and `failure` is checked immediately
+  before the wait is registered as well as after it.
+
+Plus a **watchdog**: 60 s of complete silence from a codec fails the export with
+a sentence the user can act on. An export that fails is recoverable; one that
+waits forever is indistinguishable from a slow one.
+
+Shipped as **`@unisim/media` 0.4.1**; this app moved `^0.3.1` → `^0.4.1` (0.4.0
+also brought the MP3/WAV encoders in, with LAME as an OPTIONAL peer — the dev
+server and the production build were both checked, since Video never emits MP3
+and does not install LAME).
+
+### 13.3 What this is tested by — and what it isn't
+
+- ✅ **8 consecutive exports** of the reported file, 2.6–3.2 s each, against a
+  build that hung 4 in 5. Then 6 more on the released package.
+- ✅ The **result read back** through Chromium's own demuxer: 1920×1080, 7.85 s
+  of picture and 7.85 s of audio in step, black bars either side of a centred
+  picture — the reframe is still a letterbox, not a stretch.
+- ✅ 19 of 20 e2e specs (the 20th fails on an untouched tree too:
+  since SDK 0.103.0 there are two `aria-label="Switch product"` handles in the
+  navbar — the SDK's own plus §11.1's local one — so a strict-mode locator
+  matches both. Logged in `backlog-unisim.md`, not fixed here.)
+- ⚠️ **The new render-test case does NOT catch this bug.** `rendertest.mjs` case
+  (e) renders a busy 8 s 1080×1920 source into a 1920×1080 frame, twice, with a
+  second decoder held open on the same stream — and it passes against the exact
+  build that hangs, in bundled Chromium *and* in real Chrome. The pool pressure
+  the real app generates could not be manufactured. It is a **guard** on the
+  big-frame path, not coverage of this bug, and its comment says so. If you
+  change how the reader feeds or drains a decoder, the check that means anything
+  is still: export a real phone clip, reframed, in real Chrome, several times.
