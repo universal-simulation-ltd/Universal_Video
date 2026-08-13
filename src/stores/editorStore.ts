@@ -42,6 +42,7 @@ import {
   type FramePresetId,
   type FrameSize,
 } from '../lib/frame'
+import { pictureWidth } from '../lib/layout'
 import { planTimelineExport, type TimelinePlan } from '../lib/memory'
 import { FALLBACK_VIEWPORT_PX, FIT, clampZoom, maxZoomFor, pxPerSecFor } from '../lib/zoom'
 import { exportRoute, exportTimeline } from '../lib/render'
@@ -459,6 +460,19 @@ export const selectRoute = (s: EditorState) => exportRoute(s.timeline)
  */
 export const selectFrameWidth = (s: EditorState) => outputFrame(s.timeline, s.settings).width
 export const selectFrameHeight = (s: EditorState) => outputFrame(s.timeline, s.settings).height
+/**
+ * How wide the picture is drawn — the full width, or less when the frame is
+ * upright enough to hit the height cap (see `lib/layout.ts`).
+ *
+ * A selector rather than a calculation in each component because the PLAYER and
+ * the TIMELINE both lay out from it and they must never disagree: the needle is
+ * placed as a fraction of the timeline's width, so a timeline wider than the
+ * picture puts the needle somewhere the picture isn't.
+ */
+export const selectPictureWidth = (s: EditorState) => {
+  const { width, height } = outputFrame(s.timeline, s.settings)
+  return pictureWidth(height > 0 ? width / height : 0)
+}
 
 function imageSize(url: string): Promise<{ width: number; height: number }> {
   return new Promise((resolve, reject) => {

@@ -46,18 +46,9 @@ export default function Honesty() {
       </p>
 
       <ul className="mt-3 divide-y divide-slate-100 dark:divide-slate-800">
-        <Row term="Reads" summary="MP4, M4V and MOV — not MKV, WebM, AVI or WMV.">
-          MP4, M4V and MOV. <strong className="font-semibold">Not MKV, WebM, AVI or WMV</strong>, and
-          not fragmented MP4. MKV needs a different container reader; AVI and WMV
-          need one <em>and</em> a codec the browser doesn’t have, so a reader would
-          buy a different error message rather than a working conversion.
-        </Row>
-
-        <Row term="Writes" summary="MP4 — H.264 with AAC sound, the one format that plays everywhere.">
-          MP4 — H.264 video with AAC sound, which plays on everything. One output
-          format, because it is the one that always works.
-        </Row>
-
+        {/* Edits and Reframes lead, because they are what the app is for — the
+            formats it reads and writes matter, but they are the small print of
+            a tool, not its purpose (owner, 2026-08-13). */}
         <Row
           term="Edits"
           summary="A timeline: trim, cut, slide, stack tracks, intro and outro cards, crossfades."
@@ -90,6 +81,25 @@ export default function Honesty() {
           here — and there is no library of wipes behind them. Reframing
           letterboxes and never crops: there is no zoom-to-fill, and no moving or
           scaling a clip inside the frame.
+        </Row>
+
+        <Row term="Reads" summary="MP4, M4V and MOV — not MKV, WebM, AVI or WMV.">
+          MP4, M4V and MOV. <strong className="font-semibold">Not MKV, WebM, AVI or WMV</strong>, and
+          not fragmented MP4. MKV needs a different container reader; AVI and WMV
+          need one <em>and</em> a codec the browser doesn’t have, so a reader would
+          buy a different error message rather than a working conversion.
+        </Row>
+
+        <Row
+          term="Writes"
+          summary="MP4 — H.264 with AAC sound, at whichever of three sizes you pick."
+        >
+          MP4 — H.264 video with AAC sound, which plays on everything. One output
+          format, because it is the one that always works. How hard it is squeezed
+          is yours to choose: three quality settings, and the size the file will
+          come out at is worked out and shown on the button{' '}
+          <em>before</em> you press it. Dropping one video and pressing that
+          button is the whole “make this smaller” job.
         </Row>
 
         <Row term="Doesn’t record" summary="Screen and webcam capture is Universal Recorder’s job.">

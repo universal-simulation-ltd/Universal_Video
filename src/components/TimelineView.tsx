@@ -10,10 +10,9 @@ import {
 } from 'react'
 import { clipDuration, clipSpan, timelineDuration, type Clip } from '@unisim/media'
 import { sourceById, trackCount } from '../lib/edit'
-import { PLAYER_MAX_W } from '../lib/layout'
 import { timecode } from '../lib/timecode'
 import { contentWidthFor } from '../lib/zoom'
-import { selectPxPerSec, useEditorStore } from '../stores/editorStore'
+import { selectPictureWidth, selectPxPerSec, useEditorStore } from '../stores/editorStore'
 
 /**
  * The timeline: a ruler, and every clip drawn as a video lane and an audio lane
@@ -32,10 +31,16 @@ import { selectPxPerSec, useEditorStore } from '../stores/editorStore'
  *
  * The whole thing is drawn to the PLAYER's width, not to some fixed pixels per
  * second: the scroll viewport below is the same box the picture is drawn in
- * (`PLAYER_MAX_W`, centred, same padding), it is measured rather than assumed,
- * and `lib/zoom.ts` turns that width into pixels per second. At fit the movie
- * spans it exactly, so the needle at `t` sits at `t / duration` of the width —
- * under the frame the player is showing.
+ * (`selectPictureWidth`, centred, same padding), it is measured rather than
+ * assumed, and `lib/zoom.ts` turns that width into pixels per second. At fit the
+ * movie spans it exactly, so the needle at `t` sits at `t / duration` of the
+ * width — under the frame the player is showing.
+ *
+ * That width is not a constant: an upright output frame is capped in height and
+ * therefore narrower than 720 (see `lib/layout.ts`), and this box follows it
+ * down. Measuring rather than assuming is what makes that free — the viewport
+ * is observed, so `pxPerSec` re-derives itself when the frame preset changes
+ * the shape of the movie.
  *
  * ⚠️ It is the player's PICTURE FRAME we match, not the visible rectangle of
  * whatever source happens to be on screen. The canvas is the output frame and
@@ -60,6 +65,8 @@ export default function TimelineView() {
   const setPlaying = useEditorStore((s) => s.setPlaying)
   const surfaceRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<HTMLDivElement>(null)
+  // The player's box, to the pixel — not a constant of our own.
+  const boxWidth = useEditorStore(selectPictureWidth)
 
   const duration = timelineDuration(timeline)
   // One empty track above the highest in use, so "drag it up to a new track" is
@@ -68,9 +75,9 @@ export default function TimelineView() {
   const width = contentWidthFor(viewportPx, duration, zoomFactor)
   const height = rows * TRACK_H + (rows - 1) * TRACK_GAP
 
-  // Measured, not assumed: the box is capped at PLAYER_MAX_W but narrower on a
-  // small window, and a fit that was computed from the cap would be wrong by
-  // exactly the difference.
+  // Measured, not assumed: the box is capped at the picture's width but
+  // narrower on a small window, and a fit that was computed from the cap would
+  // be wrong by exactly the difference.
   useLayoutEffect(() => {
     const el = viewRef.current
     if (!el) return
@@ -118,7 +125,7 @@ export default function TimelineView() {
     >
       {/* The same box as the player's picture, so x means the same thing in
           both. Scrolling lives here, on the box, not on the section. */}
-      <div ref={viewRef} className="mx-auto w-full overflow-x-auto" style={{ maxWidth: PLAYER_MAX_W }}>
+      <div ref={viewRef} className="mx-auto w-full overflow-x-auto" style={{ maxWidth: boxWidth }}>
         <div
           ref={surfaceRef}
           data-testid="timeline-surface"

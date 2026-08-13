@@ -1,9 +1,12 @@
 # Universal Video
 
-**Compress a video without uploading it.** Drop an MP4, M4V or MOV and it is
-opened right here, in the tab, by your own browser. Shrink it, trim it, resize
-it, then save it back. **No upload, no account, no size cap, no watermark, no
-queue** — and no server ever sees a frame of it.
+**Clip, cut and resize a video without uploading it.** Drop an MP4, M4V or MOV
+and it is opened right here, in the tab, by your own browser — with a player and
+a timeline. Trim it, cut it, stack clips, choose the size and shape it comes out
+at, and save it back. It will compress a video without uploading it too, which is
+the phrase this app was founded on; it is simply no longer the whole of what it
+is for. **No upload, no account, no size cap, no watermark, no queue** — and no
+server ever sees a frame of it.
 
 Part of the [UNI·SIM Universal Apps](https://opensource.unisim.co.uk) — free,
 open source, no account required. Served at `opensource.unisim.co.uk/video`.
@@ -53,7 +56,7 @@ drag and one click. What has **not** changed is everything below.
 | **Read fragmented MP4** | ❌ Not yet. Common from screen recorders and some phone apps, so the refusal fires more often than its rarity suggests. It is detected on drop and named, not parsed half-way. |
 | **Write WebM / VP9** | ❌ Not yet — and this is the highest-value gap, because it is also what would make **Firefox** a supported browser. WebCodecs already has the VP9 encoder; only the container is missing. |
 | **Edit** | ✅ Trim, cut at the playhead, delete, slide clips along and between tracks, stack them (two clips slid over each other add a track rather than overwriting), intro/outro cards from an image or a video, and crossfade / fade-to-black between clips. **A clip carries its own audio**, so a cut splits picture and sound at the same instant by construction — see [`timeline.ts`](https://github.com/universal-simulation-ltd/universal-platform/blob/main/packages/media/src/timeline.ts), the contract this editor and the renderer share. |
-| **Reframe** | ✅ The output frame is chosen, not inherited: match the source (the default), 1920×1080, 1080×1920, 1080×1080, or a size you type. A source of a different shape is **centred and the rest filled black** — *contain*, never *cover*, so nothing is ever cropped away. Both edges are forced even (H.264 codes in 16×16 macroblocks and the renderer refuses an odd one up front). The preview canvas is the output frame and letterboxes through the same `fitInside()` maths, so what you see while editing is what comes out. |
+| **Reframe** | ✅ The output frame is chosen, not inherited: match the source (the default), 1920×1080, 1080×1920, 1080×1080, or a size you type. A source of a different shape is **centred and the rest filled black** — *contain*, never *cover*, so nothing is ever cropped away. Both edges are forced even (H.264 codes in 16×16 macroblocks and the renderer refuses an odd one up front). The preview canvas is the output frame and letterboxes through the same `fitInside()` maths, so what you see while editing is what comes out. An **upright** frame is capped at 540 px tall in the viewer (`src/lib/layout.ts`) instead of drawing ~1280 px and pushing the timeline off the screen — and the timeline narrows with it, because the needle is placed as a fraction of that width. |
 | **Crop, zoom-to-fill, per-clip position** | ❌ No. Reframing is letterbox/pillarbox only. A fill mode would silently throw away picture that is visible in the preview; black bars are visible and fixable, a missing head is neither. |
 | **Filters, text, speed ramps, detached audio** | ❌ No colour work, no titles or watermarks, no speed changes, and no separating a clip's sound from its picture. Transitions are crossfade and fade to black only. |
 | **Record** | ❌ That is **[Universal Recorder](https://opensource.unisim.co.uk/recorder)**. Adjacent products should not grow into each other. |

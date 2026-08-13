@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { timelineDuration } from '@unisim/media'
 import { audioAt, fitInside, layersAt } from '../lib/compose'
-import { PLAYER_MAX_W } from '../lib/layout'
 import { timecode } from '../lib/timecode'
-import { selectFrameHeight, selectFrameWidth, useEditorStore } from '../stores/editorStore'
+import {
+  selectFrameHeight,
+  selectFrameWidth,
+  selectPictureWidth,
+  useEditorStore,
+} from '../stores/editorStore'
 
 /**
  * The canvas's backing store, in pixels across.
@@ -34,6 +38,12 @@ const PREVIEW_W = 640
  * the file. That equality is the whole point of the reframe control: if the
  * preview and the export disagree about the bars, the preview is lying, and the
  * user finds out after the encode instead of before it.
+ *
+ * The BOX it is drawn in is bounded both ways (`lib/layout.ts`): 720 across, 540
+ * down. An upright frame therefore narrows rather than growing to ~1280 px tall
+ * and pushing the transport, the toolbar and the timeline off the screen — and
+ * the timeline narrows with it, because the needle is placed as a fraction of
+ * the timeline's width and only means anything while the two boxes match.
  */
 export default function Player() {
   const timeline = useEditorStore((s) => s.timeline)
@@ -59,6 +69,10 @@ export default function Player() {
   // it, and the preview has to show the shape that will really come out.
   const frameWidth = useEditorStore(selectFrameWidth)
   const frameHeight = useEditorStore(selectFrameHeight)
+  // How wide the picture is allowed to be drawn: the full box, or narrower when
+  // an upright frame would otherwise be taller than the screen. The timeline
+  // reads the SAME selector — see `lib/layout.ts` for why they cannot differ.
+  const boxWidth = useEditorStore(selectPictureWidth)
 
   const duration = timelineDuration(timeline)
   const aspect = frameWidth > 0 && frameHeight > 0 ? frameWidth / frameHeight : 16 / 9
@@ -166,9 +180,10 @@ export default function Player() {
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-      {/* The timeline's scroll viewport is laid out from this same constant, in
-          this same box, so the needle lines up under the picture. */}
-      <div className="mx-auto w-full" style={{ maxWidth: PLAYER_MAX_W }}>
+      {/* The timeline's scroll viewport is laid out from this same width, in
+          this same box, so the needle lines up under the picture — including
+          when an upright frame has narrowed it. */}
+      <div className="mx-auto w-full" style={{ maxWidth: boxWidth }}>
         <canvas
           ref={canvasRef}
           width={PREVIEW_W}

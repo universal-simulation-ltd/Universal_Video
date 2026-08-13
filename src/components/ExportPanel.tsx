@@ -36,8 +36,11 @@ const AUDIO_BITRATES = [96, 128, 192, 256]
  * exporter holds every source on the timeline at once — so the refusal counts
  * all of them (see `lib/memory.ts`) and the estimate is on the button.
  *
- * The button's own words change with what is on the timeline: one clip is still
- * "Compress this video", because that is still exactly what it does.
+ * The button's own words change with what is on the timeline: one clip is
+ * "Export this video", several is "Export this edit — N clips". It used to say
+ * "Compress this video" for the single-clip case; it doesn't now, because
+ * compressing is one of the things an export does (and the "% smaller" on the
+ * second line says so when it applies) rather than what the button is for.
  */
 export default function ExportPanel() {
   const settings = useEditorStore((s) => s.settings)
@@ -247,9 +250,9 @@ export default function ExportPanel() {
       >
         <span className="block text-[15px] font-semibold">
           {refused || supported === false
-            ? 'Can’t compress this here'
+            ? 'Can’t export this here'
             : route === 'compress'
-              ? 'Compress this video'
+              ? 'Export this video'
               // One clip can reach this now: a reframe is a letterbox, and only
               // the renderer can letterbox, so "1 clips" became reachable the
               // moment the frame control shipped.

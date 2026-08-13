@@ -32,10 +32,15 @@ const REPO_URL = 'https://github.com/universal-simulation-ltd/Universal_Video'
  * One screen. The editor IS the app.
  *
  * There is no "compress mode" and no "edit mode" to choose between: a dropped
- * file becomes a clip on a timeline, and compressing it is exporting a timeline
- * with one clip on it. That is why the fast path stayed fast — one drag, one
- * click, and the button still says "Compress this video" when that is what it
- * is about to do.
+ * file becomes a clip on a timeline, and making it smaller is exporting a
+ * timeline with one clip on it. That is why the fast path stayed fast — one
+ * drag, one click.
+ *
+ * The COPY was re-pointed on 2026-08-13 (owner): clipping, cutting and changing
+ * the frame is what this is for, and compressing is something it also does. The
+ * old headline — "Compress a video without uploading it" — was the search
+ * phrase the app was founded on and now lives in the meta description instead;
+ * see the comment in `index.html` before putting it back at the top.
  */
 /**
  * The product mark, made focusable so the suite switcher still has a keyboard
@@ -161,17 +166,19 @@ export default function App() {
 
       <main className={`${CONTAINER} flex-1 py-8`}>
         <header className="mb-8">
-          {/* This exact sentence is the reason the app exists as its own front
-              door rather than a tab in Universal Converter — see index.html.
-              Don't reword it for style; it is the search intent verbatim. */}
+          {/* What the app is FOR, in the order it is for it: clip, cut, resize
+              — and smaller as one of the things that happens on the way out.
+              The old headline was the search phrase verbatim and has moved to
+              the meta description; see index.html before reordering these. */}
           <h1 className="text-2xl font-semibold text-slate-900 sm:text-3xl dark:text-slate-100">
-            Compress a video without uploading it
+            Clip, cut and resize a video without uploading it
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">
             Drop an MP4, M4V or MOV and it is opened right here, in this tab, by
-            your own browser — with a player and a timeline. Shrink it, trim it,
-            cut it, stack clips, add an intro or an outro. No upload, no account,
-            no size cap, no watermark and no queue.
+            your own browser — with a player and a timeline. Trim it, cut it,
+            stack clips, add an intro or an outro, and choose the size and shape
+            it comes out at. Make it smaller too, if that is all you came for.
+            No upload, no account, no size cap, no watermark and no queue.
           </p>
         </header>
 

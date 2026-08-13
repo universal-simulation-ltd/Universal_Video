@@ -2,8 +2,8 @@ import { DropAnywhere, DropRing, useFileDrop } from '@unisim/sdk'
 import { EDITOR_ACCEPT, useEditorStore } from '../stores/editorStore'
 
 // The first screen, and the only one that isn't the editor. Its job is to say
-// what this is and take some files — one is the whole compress path, several is
-// an edit, and the app does not ask which you meant.
+// what this is and take some files — one file or several, a trim or a five-clip
+// edit, and the app does not ask which you meant.
 //
 // The LOOK is the suite's, not this app's. This used to be a dashed rectangle
 // with its own "choose a file" button inside it, on the argument that the
@@ -68,19 +68,20 @@ export default function DropZone() {
       </div>
 
       <p className="mt-8 max-w-md text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-        It opens in this tab, with a player and a timeline under it. Drop several
-        and they line up one after another. Images are taken too, as an intro or
-        an outro card. Nothing is uploaded, and there is no size cap, no account,
-        no watermark and no queue.
+        It opens in this tab, with a player and a timeline under it: trim it, cut
+        it at the playhead, and pick the size and shape it comes out at. Drop
+        several and they line up one after another. Images are taken too, as an
+        intro or an outro card. Nothing is uploaded, and there is no size cap, no
+        account, no watermark and no queue.
       </p>
 
       {supported === false && (
         <p className="mt-6 max-w-md rounded-xl bg-amber-50 px-4 py-3 text-left text-xs leading-relaxed text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
           <strong className="font-semibold">This browser can’t do the encoding.</strong>{' '}
-          Compressing to MP4 needs a WebCodecs H.264 <em>encoder</em>, and this
-          browser doesn’t have one — Firefox is the usual case. Chrome, Edge and
-          Safari 16.4+ do. You can still drop a file and edit it here, but the
-          export will not run.
+          Writing the MP4 back out needs a WebCodecs H.264 <em>encoder</em>, and
+          this browser doesn’t have one — Firefox is the usual case. Chrome, Edge
+          and Safari 16.4+ do. You can still drop a file and edit it here, but
+          the export will not run.
         </p>
       )}
 

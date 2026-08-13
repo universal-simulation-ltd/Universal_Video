@@ -40,11 +40,13 @@ begin with.
 
 What is genuinely new here, and could not have been an alias:
 
-- **The front door.** `<title>`, description, OG card and H1 all say *"compress a
+- **The front door.** `<title>`, description, OG card and H1 all said *"compress a
   video without uploading it"* verbatim — §10's Q1 analysis is that this is the
   highest-volume intent in the suite and `/converter` will never rank for it.
-  There is an e2e test asserting the H1 is exactly that sentence; if it ever has
-  to be relaxed, the app has lost its reason to exist separately.
+  ⚠️ **Superseded on 2026-08-13 — see §12.1:** the phrase was demoted to the
+  description and the keywords, and the H1 now says what the app is for
+  (*"Clip, cut and resize a video without uploading it"*). The e2e test asserts
+  both: the new headline, and that the old phrase is still matchable in the head.
 - **The pre-flight refusal** (§10.4), which Converter does not have. A probe, an
   output prediction on the button, a refusal that names a working setting, and
   progress in frames-and-bytes rather than a percentage.
@@ -353,8 +355,10 @@ Deleted with the old flow: `stores/videoStore.ts`, `SourceCard.tsx`,
 - **An image is a source, not a special case** (the contract's own reasoning), so
   an intro card trims, moves and takes a transition like footage. Changing a
   card's length changes the source and re-clamps every clip cut from it.
-- **The one-drag-one-click compress path is intact**, and the button still says
-  *"Compress this video"* when the timeline holds a single clip.
+- **The one-drag-one-click compress path is intact.** The button said
+  *"Compress this video"* for a single clip until 2026-08-13; it says
+  *"Export this video"* now (§12), and the *"% smaller"* on its second line is
+  what tells you it compressed.
 - **`c` cuts, `Delete` deletes, space plays** — ignored while focus is in a
   field, or typing "3" into the out-point box would delete a clip.
 - **The timeline is as wide as the picture, and zoom is a multiple of that.**
@@ -554,12 +558,9 @@ being black is what proves it was letterboxed.**
 
 ### 9.6 Left over
 
-- **A tall preview.** The picture box is still `PLAYER_MAX_W` wide whatever the
-  frame, so a 9:16 output draws a ~1280 px-tall canvas. That is not new — it is
-  what dropping a phone video has always done — and it was left alone on purpose:
-  the timeline is laid out to the same box, and capping the height would narrow
-  the picture and take the needle out of line with it. If it is ever fixed, the
-  timeline viewport has to move with it, and the alignment spec is the check.
+- ~~**A tall preview.**~~ ✅ **Fixed 2026-08-13 — see §12.2.** The box is bounded
+  both ways now, and the timeline moved with it exactly as this note said it
+  would have to.
 - **No fill mode.** See §9.3. Report it as a request; don't add it quietly.
 
 ## 10. The front door is the suite's circle
@@ -735,3 +736,79 @@ revert it as cleanup without deciding that question.
 for the same reason it was here: `SuiteSwitcher`'s guard matches the TAG
 (`closest('a, button')`), so promoting a switcher trigger to a real `<button>`
 gets it swallowed by the very rule being worked around.
+
+---
+
+## 12. It is an editor, and the copy says so — 2026-08-13
+
+The owner's brief: *"Update the text on Universal Video — its purpose is not
+primarily to compress a video, more to clip, cut, change dimensions. If a
+portrait video then have a max height in the viewer so it doesn't take over the
+screen."*
+
+Two changes, and the first one contradicts something this repo had written down
+in three places, so read the reasoning before reverting any of it.
+
+### 12.1 The founding search phrase is DEMOTED, not deleted
+
+`index.html`, `App.tsx` and `e2e/video.e2e.ts` all carried a note saying *"keep
+the phrase intact in the title, the description and the H1"* — the phrase being
+**"Compress a video without uploading it"**, which is why §10 of
+`next-products.md` argued this should not be a tab inside Universal Converter.
+The e2e spec asserted the H1 verbatim and said that if the assertion ever had to
+be relaxed, *"the app has lost its reason to exist separately"*.
+
+That was written when the app compressed one file. It has been a multi-track
+editor since §8, and the owner's point is that the SEO phrase had outlived the
+product: what people do here is clip, cut and change the frame.
+
+So the phrase moved rather than going away:
+
+| Where | Before | Now |
+|---|---|---|
+| H1 | Compress a video without uploading it | **Clip, cut and resize a video without uploading it** |
+| `<title>`, `og:title`, `twitter:title` | same | same as the H1 |
+| `meta[name=description]` | led with it | still contains it, in the second sentence |
+| `meta[name=keywords]` | `compress video without uploading` first | clip/cut/resize/dimensions first, the compress terms kept |
+| Export button (1 clip) | Compress this video | **Export this video** |
+| Export button (refused) | Can't compress this here | **Can't export this here** |
+
+The spec was rewritten to match and now asserts **both halves**: the new H1 and
+title verbatim, *and* that the old phrase is still matchable in the description
+and the keywords. Dropping it from the head entirely is still a regression —
+that part of the old note holds.
+
+`Honesty` also re-ordered: **Edits** and **Reframes** lead the list, and
+**Writes** picked up the sentence that says dropping one video and pressing the
+button is the whole "make this smaller" job. Nine rows, as the heading promises.
+
+### 12.2 The picture is bounded in BOTH directions
+
+§9.6 listed a tall preview as left over: a 9:16 frame drew a ~1280 px canvas and
+pushed the transport, the toolbar and the whole timeline below the fold. It also
+said what fixing it would cost — *"the timeline viewport has to move with it, and
+the alignment spec is the check"* — and that is exactly how it was done.
+
+`lib/layout.ts` gained `PLAYER_MAX_H = 540` and `pictureWidth(aspect)`:
+
+```
+width = min(720, round(540 × aspect))
+```
+
+**540 is 720 × 3/4 on purpose**, so the cap starts biting at exactly 4:3 and no
+landscape frame is touched. A square frame is 540 across; 9:16 — the case this
+exists for — is **304 × 540** instead of 720 × 1280.
+
+The width is exposed as `selectPictureWidth` on the store, and BOTH `Player` and
+`TimelineView` lay out from it. That is the whole trick: `pxPerSec` comes from a
+*measured* viewport (§8, `lib/zoom.ts`), so the timeline re-derives itself when
+the box narrows, and the needle — placed at `t / duration` of that width — stays
+under the frame it names. A timeline left at 720 while the picture shrank to 304
+would put every needle position outside the picture.
+
+The portrait e2e spec now asserts the cap directly (canvas ≤ 541 px tall, < 720
+wide, and the timeline surface the same width and x), before it switches the
+frame to landscape and re-asserts the original alignment. `pictureWidth()` has
+unit tests of its own in `src/lib/layout.test.ts`, including that 4:3 does not
+move and that a nonsense aspect falls back to the full width rather than
+collapsing the box.

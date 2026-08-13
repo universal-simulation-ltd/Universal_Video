@@ -191,18 +191,23 @@ test.describe('Universal Video', () => {
   test('the front door says the thing it exists to say', async ({ page }) => {
     await page.goto('/')
 
-    // This is the whole reason the app is not a tab in Universal Converter
-    // (§10, Q1). If this assertion ever has to be relaxed, the app has lost its
-    // reason to exist separately.
+    // What the app is FOR leads (owner, 2026-08-13): it is an editor, and
+    // clipping, cutting and changing the frame is the job — compressing is one
+    // of the things an export does.
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-      'Compress a video without uploading it',
+      'Clip, cut and resize a video without uploading it',
     )
-    await expect(page).toHaveTitle(/Compress a video without uploading it/)
-
-    const description = await page.locator('meta[name=description]').getAttribute('content')
-    expect(description).toContain('Compress a video without uploading it')
+    await expect(page).toHaveTitle(/Clip, cut and resize a video without uploading it/)
     const og = await page.locator('meta[property="og:title"]').getAttribute('content')
-    expect(og).toContain('Compress a video without uploading it')
+    expect(og).toContain('Clip, cut and resize a video without uploading it')
+
+    // …and the phrase the app was founded on is DEMOTED, not deleted. It is the
+    // reason this is not a tab in Universal Converter (§10, Q1), so it still has
+    // to be matchable in the head — just not as the first thing a visitor reads.
+    const description = await page.locator('meta[name=description]').getAttribute('content')
+    expect(description?.toLowerCase()).toContain('compress a video without uploading it')
+    const keywords = await page.locator('meta[name=keywords]').getAttribute('content')
+    expect(keywords).toContain('compress video without uploading')
   })
 
   test('opens in light mode even when the device asks for dark', async ({ browser }) => {
@@ -370,7 +375,7 @@ test.describe('Universal Video', () => {
 
     // The estimate is ON the button. §10.4: "arm or refuse the button *before*
     // it is pressed, with the estimate written on the button itself."
-    const button = page.getByRole('button', { name: /Compress this video/ })
+    const button = page.getByRole('button', { name: /Export this video/ })
     await expect(button).toBeEnabled()
     await expect(button).toContainText(/About \d/)
     await expect(button).toContainText(/% smaller/)
@@ -562,11 +567,11 @@ test.describe('Universal Video', () => {
     await drop(page, 'clip.mp4', FIXTURE_BYTES)
 
     const predicted = await page
-      .getByRole('button', { name: /Compress this video/ })
+      .getByRole('button', { name: /Export this video/ })
       .textContent()
     expect(predicted).toMatch(/About/)
 
-    await page.getByRole('button', { name: /Compress this video/ }).click()
+    await page.getByRole('button', { name: /Export this video/ }).click()
 
     // Frames-done / frames-total, not just a percentage — that is what makes a
     // run drifting past its prediction visible at 20% rather than at 100%.
@@ -664,7 +669,7 @@ test.describe('Universal Video', () => {
     await page.getByLabel('Out point').blur()
     await expect(page.locator('[data-testid=clip]')).toHaveAttribute('data-out', '1.000')
 
-    await page.getByRole('button', { name: /Compress this video/ }).click()
+    await page.getByRole('button', { name: /Export this video/ }).click()
     await expect(page.getByRole('button', { name: /^Save clip\.mp4$/ })).toBeVisible({ timeout: 60_000 })
 
     const result = await page.evaluate(async () => {
@@ -740,14 +745,28 @@ test.describe('Universal Video', () => {
     await expect(page.getByText(/270×480 · 0:02 · 30 fps/)).toBeVisible()
 
     // Left alone, the movie is still the shape of what was dropped.
-    await expect(page.getByRole('button', { name: /Compress this video/ })).toContainText('270×480')
+    await expect(page.getByRole('button', { name: /Export this video/ })).toContainText('270×480')
     await expect(page.locator('[data-testid=preview]')).toHaveAttribute('data-frame', '270x480')
+
+    // ── An upright frame does not take over the screen ─────────────────────
+    // The owner's ask: *"if a portrait video then have a max height in the
+    // viewer so it doesn't take over the screen"*. 9:16 at the full 720 px wide
+    // is ~1280 px tall — the transport, the toolbar and the whole timeline end
+    // up below the fold. `PLAYER_MAX_H` caps it, and the timeline narrows WITH
+    // the picture: a needle placed as a fraction of a wider box would sit
+    // outside the frame it names.
+    const upright = (await page.locator('[data-testid=preview]').boundingBox())!
+    expect(upright.height).toBeLessThanOrEqual(541)
+    expect(upright.width).toBeLessThan(720)
+    const uprightSurface = (await page.locator('[data-testid=timeline-surface]').boundingBox())!
+    expect(Math.abs(uprightSurface.width - upright.width)).toBeLessThan(1)
+    expect(Math.abs(uprightSurface.x - upright.x)).toBeLessThan(1)
 
     await page.getByLabel('Output frame').selectOption('landscape')
 
     // The prediction moves the moment the frame does — before anything runs.
     await expect(page.locator('[data-testid=preview]')).toHaveAttribute('data-frame', '1920x1080')
-    const button = page.getByRole('button', { name: /Export this edit|Compress this video/ })
+    const button = page.getByRole('button', { name: /Export this video|Export this edit/ })
     await expect(button).toContainText('1920×1080')
     await expect(button).toBeEnabled()
 
@@ -784,7 +803,7 @@ test.describe('Universal Video', () => {
     expect(preview.samples[1].r).toBeGreaterThan(60) // picture
 
     // ── And so does the FILE ───────────────────────────────────────────────
-    await page.getByRole('button', { name: /Export this edit|Compress this video/ }).click()
+    await page.getByRole('button', { name: /Export this video|Export this edit/ }).click()
     await expect(page.getByRole('button', { name: /^Save / })).toBeVisible({ timeout: 180_000 })
 
     // A 270×480 source contained in 1920×1080 is drawn 607.5 px wide and
@@ -844,7 +863,7 @@ test.describe('Universal Video', () => {
     await page.getByLabel('Frame width').fill('3840')
     await page.getByLabel('Frame height').fill('2160')
     await page.getByLabel('Frame height').blur()
-    await expect(page.getByRole('button', { name: /Export this edit|Compress this video/ }))
+    await expect(page.getByRole('button', { name: /Export this video|Export this edit/ }))
       .toContainText('3840×2160')
   })
 
@@ -880,7 +899,7 @@ test.describe('Universal Video', () => {
 
     await page.goto('/')
     await drop(page, 'clip.mp4', FIXTURE_BYTES)
-    await page.getByRole('button', { name: /Compress this video/ }).click()
+    await page.getByRole('button', { name: /Export this video/ }).click()
     await expect(page.getByRole('button', { name: /^Save clip\.mp4$/ })).toBeVisible({ timeout: 60_000 })
 
     // The SDK talks to Supabase for auth/navbar state; that is allowed and is
