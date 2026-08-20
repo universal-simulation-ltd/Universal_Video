@@ -43,41 +43,6 @@ const REPO_URL = 'https://github.com/universal-simulation-ltd/Universal_Video'
  * see the comment in `index.html` before putting it back at the top.
  */
 /**
- * The product mark, made focusable so the suite switcher still has a keyboard
- * way in.
- *
- * The home `<a>` this replaces was the ONLY focusable thing in the identity
- * cluster, and `SuiteSwitcher` opens on `onFocusCapture` — so dropping the link
- * without this would have fixed the tap and quietly taken the Tab key away.
- *
- * ⚠️ `role="button"` on a span rather than a real `<button>`, which is the one
- * thing here that looks like a mistake and isn't: the switcher's wrapper bails
- * out of its toggle on `target.closest('a, button')`, a selector matching the
- * TAG, not the role. A real button would be swallowed by the same rule that
- * swallowed the anchor. The key handler re-dispatches as a click for the same
- * reason — that is the event the wrapper is listening for.
- */
-function SwitcherHandle() {
-  return (
-    <span
-      role="button"
-      tabIndex={0}
-      aria-haspopup="true"
-      aria-label="Switch product"
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          e.currentTarget.click()
-        }
-      }}
-      className="inline-flex rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600"
-    >
-      <ProductLogo />
-    </span>
-  )
-}
-
-/**
  * The one genuinely indeterminate wait in this app.
  *
  * It used to be a bare sentence; the ring is the suite's shared one (SDK
@@ -135,7 +100,7 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-100 dark:bg-slate-950">
-      {/* No `productHomeHref`, deliberately — see SwitcherHandle below. With it
+      {/* No `productHomeHref`, deliberately. With it
           set, the SDK wraps the logo and the product name in one home `<a>`,
           and `SuiteSwitcher`'s wrapper skips any click landing on an `<a>` or a
           `<button>` so a child link can still navigate. The result was that the
@@ -144,12 +109,23 @@ export default function App() {
           could not be reached from the identity by any gesture, and a tap
           reloaded the page instead. Mid-edit that reload takes the timeline
           with it, and this app is one screen, so "home" was never anywhere
-          else. Without the prop the identity is a plain span: hover opens it on
-          the desktop and a tap toggles it on a phone. */}
+          else. Without the prop the SDK makes the identity itself the switcher
+          trigger: hover opens it on the desktop and a tap toggles it on a phone.
+
+          This app used to wrap `productLogo` in its own focusable
+          `SwitcherHandle`, because dropping the home `<a>` had removed the only
+          focusable node in the cluster and taken the Tab key away with it. That
+          is no longer ours to do: SDK 0.103.0 generalised exactly that
+          workaround into the no-`productHomeHref` branch — same `role="button"`
+          span, same `tabIndex`, same Enter/Space re-dispatch, same
+          "Switch product" label — after finding PDF and QR had the same hole.
+          Keeping ours as well put TWO elements with that one accessible name on
+          the page: a screen reader read it twice, and the e2e spec's strict-mode
+          locator matched both and failed. */}
       <UniversalAppsNavBar
         contentClassName={CONTAINER}
         product="video"
-        productLogo={<SwitcherHandle />}
+        productLogo={<ProductLogo />}
         actions={<AppMenu />}
         actionsLabel="Video"
         suiteSwitcherIconSrc={`${import.meta.env.BASE_URL}unisim-icon.png`}

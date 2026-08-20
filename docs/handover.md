@@ -729,8 +729,35 @@ redundant: an app on 0.100.0 can pass `productHomeHref` and still have a working
 switcher. Video's `SwitcherHandle` and its dropped `productHomeHref` were left
 in place on purpose — for a one-screen editor, "home" is the page you are
 already on and the reload discards the timeline, so having no home link may
-still be right here. It is a product decision now, not a workaround. Do not
-revert it as cleanup without deciding that question.
+still be right here. It is a product decision now, not a workaround.
+
+### 11.4 ✅ Decided and cleaned up — 2026-08-20 (James)
+
+**The product question is answered: Video keeps NO home link.** `productHomeHref`
+stays unset, for the reason §11.3 gives — a one-screen editor's "home" is the
+page you are already on, and the reload throws the timeline away.
+
+**And with that answered, `SwitcherHandle` is deleted.** It is not a matter of
+taste: SDK **0.103.0** generalised this exact workaround into the
+no-`productHomeHref` branch of `UniversalAppsNavBar`, after finding Universal
+PDF and Universal QR had the same hole (neither could open the switcher from the
+keyboard). The SDK's version is the same construct line for line — `role="button"`
+span, `tabIndex={0}`, `aria-haspopup`, the "Switch product" label, and the
+Enter/Space re-dispatch — and the SDK's own source comment names Video as where
+it came from.
+
+So ours was nested *inside* an identical one. Two elements, one accessible name:
+a screen reader announced it twice, and the strict-mode locator in
+`e2e/video.e2e.ts:238` matched both. That is the 20th spec noted as failing on an
+untouched tree in §13 — now fixed, not merely explained.
+
+⚠️ **The negative control is worth keeping in mind if this ever recurs**: on the
+stashed (untouched) tree the spec fails with `strict mode violation:
+getByRole('button', { name: 'Switch product' }) resolved to 2 elements`, and
+passes with the local handle removed. If you re-introduce any focusable node
+carrying that label, that is the error you will get.
+
+Full suite after the change: **135 unit tests and all 20 e2e specs pass.**
 
 ⚠️ **The `<span role="button">` note in §11.1 is still load-bearing SDK-wide**,
 for the same reason it was here: `SuiteSwitcher`'s guard matches the TAG
@@ -881,10 +908,10 @@ and does not install LAME).
 - ✅ The **result read back** through Chromium's own demuxer: 1920×1080, 7.85 s
   of picture and 7.85 s of audio in step, black bars either side of a centred
   picture — the reframe is still a letterbox, not a stretch.
-- ✅ 19 of 20 e2e specs (the 20th fails on an untouched tree too:
-  since SDK 0.103.0 there are two `aria-label="Switch product"` handles in the
+- ✅ 19 of 20 e2e specs (the 20th failed on an untouched tree too:
+  since SDK 0.103.0 there were two `aria-label="Switch product"` handles in the
   navbar — the SDK's own plus §11.1's local one — so a strict-mode locator
-  matches both. Logged in `backlog-unisim.md`, not fixed here.)
+  matched both. **Fixed 2026-08-20 — see §11.4; all 20 now pass.**)
 - ⚠️ **The new render-test case does NOT catch this bug.** `rendertest.mjs` case
   (e) renders a busy 8 s 1080×1920 source into a 1920×1080 frame, twice, with a
   second decoder held open on the same stream — and it passes against the exact
