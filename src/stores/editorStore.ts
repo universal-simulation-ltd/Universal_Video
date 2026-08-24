@@ -47,6 +47,7 @@ import { planTimelineExport, type TimelinePlan } from '../lib/memory'
 import { FALLBACK_VIEWPORT_PX, FIT, clampZoom, maxZoomFor, pxPerSecFor } from '../lib/zoom'
 import { exportRoute, exportTimeline } from '../lib/render'
 import { secondsRemaining } from '../lib/eta'
+import { deleteRecent, getRecent, listRecents, saveRecent, type RecentMeta } from '../lib/recents'
 
 /**
  * The editor IS the app.
@@ -123,6 +124,15 @@ interface EditorState {
   /** Set when the export could not run at all — e.g. the renderer isn't in the package yet. */
   blocked: string | null
 
+  /** The last few videos, kept in this browser. Metadata only — see `lib/recents.ts`. */
+  recents: RecentMeta[]
+  /**
+   * What the user asked for on the way in, when it was not simply "open this".
+   * `'convert'` comes from the front door's Convert pill and makes the export
+   * panel announce itself rather than sitting quietly at the bottom right.
+   */
+  intent: 'convert' | null
+
   checkSupport(): Promise<void>
   addFiles(files: File[], placement?: Placement): Promise<void>
 
@@ -146,6 +156,12 @@ interface EditorState {
   setCustomFrame(patch: Partial<FrameSize>): void
   acceptAlternative(): void
   exportEdit(): Promise<void>
+  /** Open one video and export it straight away, at whatever the settings are. */
+  compressNow(files: File[]): Promise<void>
+  loadRecents(): Promise<void>
+  openRecent(id: string): Promise<void>
+  forgetRecent(id: string): Promise<void>
+  setIntent(intent: 'convert' | null): void
   download(): void
   reset(): void
 }
@@ -194,6 +210,8 @@ export const useEditorStore = create<EditorState>((set, get) => {
     progress: null,
     result: null,
     error: null,
+    recents: [],
+    intent: null,
     blocked: null,
 
     checkSupport: async () => {
@@ -210,6 +228,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       let timeline = get().timeline
       const assets = { ...get().assets }
       const problems: string[] = []
+      const remember: { file: File; probe: { durationSec: number; width: number; height: number } }[] = []
 
       for (const file of files) {
         const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
@@ -247,6 +266,10 @@ export const useEditorStore = create<EditorState>((set, get) => {
                 hasAudio: probe.hasAudio,
               },
             }
+            remember.push({
+              file,
+              probe: { durationSec: probe.duration, width: probe.width, height: probe.height },
+            })
           } else {
             const size = await imageSize(url)
             source = describeSource(id, 'image', file.name, DEFAULT_IMAGE_SEC, size.width, size.height, false)
@@ -269,6 +292,18 @@ export const useEditorStore = create<EditorState>((set, get) => {
         error: problems.length ? problems.join(' ') : null,
         selectedClipId: timeline.clips.length ? timeline.clips[timeline.clips.length - 1].id : null,
       })
+
+      // Remember them, in the background and never in the way: `saveRecent`
+      // swallows a full quota or a private window, and the editor is already
+      // usable by the time any of this runs. Videos only — an intro card is
+      // not a video somebody comes back to.
+      void (async () => {
+        let changed = false
+        for (const { file, probe } of remember) {
+          if (await saveRecent(file, probe)) changed = true
+        }
+        if (changed) await get().loadRecents()
+      })()
     },
 
     select: (clipId) => set({ selectedClipId: clipId }),
@@ -402,6 +437,45 @@ export const useEditorStore = create<EditorState>((set, get) => {
       }
     },
 
+    /**
+     * The front door's one-click path: open it, then export it, with no stop in
+     * between. It is the same two calls the user would make by hand — there is
+     * no second pipeline here, and no settings of its own.
+     *
+     * ⚠️ It does NOT force the export past a refusal. If the memory plan says
+     * the edit will not fit, `exportEdit` returns without doing anything and the
+     * editor is on screen with the reason showing, which is the same place a
+     * refused Export button leaves you.
+     */
+    compressNow: async (files) => {
+      await get().addFiles(files)
+      const { timeline, plan } = get()
+      if (!timeline.clips.length) return
+      if (plan?.verdict === 'refuse') return
+      await get().exportEdit()
+    },
+
+    loadRecents: async () => set({ recents: await listRecents() }),
+
+    openRecent: async (id) => {
+      const file = await getRecent(id)
+      if (!file) {
+        // Evicted by the budget, or cleared with the browser's site data. Say so
+        // and take the row away rather than leaving a button that does nothing.
+        await get().forgetRecent(id)
+        set({ error: 'That video isn’t in this browser any more — open it again from your files.' })
+        return
+      }
+      await get().addFiles([file])
+    },
+
+    forgetRecent: async (id) => {
+      await deleteRecent(id)
+      set((s) => ({ recents: s.recents.filter((r) => r.id !== id) }))
+    },
+
+    setIntent: (intent) => set({ intent }),
+
     download: () => {
       const result = get().result
       if (!result) return
@@ -435,6 +509,9 @@ export const useEditorStore = create<EditorState>((set, get) => {
         result: null,
         error: null,
         blocked: null,
+        // Back at the front door, so the way in is a fresh question. `recents`
+        // is NOT cleared — it is a fact about this browser, not about the edit.
+        intent: null,
       })
     },
   }

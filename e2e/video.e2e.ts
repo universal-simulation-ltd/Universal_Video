@@ -191,23 +191,35 @@ test.describe('Universal Video', () => {
   test('the front door says the thing it exists to say', async ({ page }) => {
     await page.goto('/')
 
-    // What the app is FOR leads (owner, 2026-08-13): it is an editor, and
-    // clipping, cutting and changing the frame is the job — compressing is one
-    // of the things an export does.
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-      'Clip, cut and resize a video without uploading it',
-    )
+    // ⚠️ THREE sentences, and each one is somewhere different on purpose.
+    //
+    // 1. The HEADLINE is the suite's shape (owner, 2026-08-24) — "PDFs that
+    //    just work", "Videos that just work". It is a promise, not a search
+    //    phrase, and it is what a person reads first.
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Videos that just work.')
+    await expect(page.getByText('Trim it, cut it, stack it')).toBeVisible()
+
+    // 2. What the app is FOR (owner, 2026-08-13) moved to the head and to the
+    //    editor's own heading. It is an editor; clipping, cutting and changing
+    //    the frame is the job, and compressing is one thing an export does.
     await expect(page).toHaveTitle(/Clip, cut and resize a video without uploading it/)
     const og = await page.locator('meta[property="og:title"]').getAttribute('content')
     expect(og).toContain('Clip, cut and resize a video without uploading it')
 
-    // …and the phrase the app was founded on is DEMOTED, not deleted. It is the
-    // reason this is not a tab in Universal Converter (§10, Q1), so it still has
-    // to be matchable in the head — just not as the first thing a visitor reads.
+    // 3. …and the phrase the app was founded on is DEMOTED, not deleted. It is
+    //    the reason this is not a tab in Universal Converter (§10, Q1), so it
+    //    still has to be matchable in the head — just not the first thing read.
     const description = await page.locator('meta[name=description]').getAttribute('content')
     expect(description?.toLowerCase()).toContain('compress a video without uploading it')
     const keywords = await page.locator('meta[name=keywords]').getAttribute('content')
     expect(keywords).toContain('compress video without uploading')
+
+    // The editor's heading is the sentence the front door gave up, so the words
+    // are still on the page — one screen further in.
+    await drop(page, 'clip.mp4', FIXTURE_BYTES)
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+      'Clip, cut and resize a video without uploading it',
+    )
   })
 
   test('opens in light mode even when the device asks for dark', async ({ browser }) => {
@@ -304,33 +316,58 @@ test.describe('Universal Video', () => {
     await expect(page.locator('[data-testid=clip]')).toHaveCount(1)
   })
 
-  test('the front door is two columns, and every honesty row opens on click', async ({ page }) => {
+  test('the front door is two columns, with the ways in stacked in one card', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.goto('/')
 
     // Two columns, the shape Universal PDF and Universal Images open on: the
-    // drawing of what the app does on the left, the headline and the drop ring
-    // on the right — and the spec sheet as the row underneath both. Asserted
-    // GEOMETRICALLY rather than by class name: the point is that they are side
-    // by side, and a class assertion would pass on a grid that had silently
-    // collapsed.
+    // drawing of what the app does on the left, the headline and the card on
+    // the right. Asserted GEOMETRICALLY rather than by class name — the point
+    // is that they are side by side, and a class assertion would pass on a grid
+    // that had silently collapsed.
     const ring = page.getByRole('button', { name: 'Drop a video here, or choose a file' })
-    const box = page.getByRole('heading', { name: /What it does/ })
     const illustration = page.getByTestId('illustration')
     const ringBox = (await ring.boundingBox())!
-    const honestyBox = (await box.boundingBox())!
     const illustrationBox = (await illustration.boundingBox())!
     expect(illustrationBox.x + illustrationBox.width).toBeLessThan(ringBox.x)
-    expect(honestyBox.y).toBeGreaterThan(ringBox.y + ringBox.height)
+
+    // One card, read top to bottom: circle → example/recents → or → one click →
+    // more options. The order is the whole design, so it is asserted as an
+    // order and not as a set of things that merely exist.
+    const example = (await page.getByRole('button', { name: /Try with an example video/ }).boundingBox())!
+    const compress = (await page.getByRole('button', { name: /1 Click Compress/ }).boundingBox())!
+    const more = (await page.getByText('More options').boundingBox())!
+    expect(example.y).toBeGreaterThan(ringBox.y + ringBox.height)
+    expect(compress.y).toBeGreaterThan(example.y)
+    expect(more.y).toBeGreaterThan(compress.y)
+
+    // More options is CLOSED until asked. Everything in it is a second way to
+    // do what the circle already does, so it must not compete with the circle.
+    await expect(page.getByRole('button', { name: /^Convert —/ })).toBeHidden()
+    await page.getByText('More options').click()
+    await expect(page.getByRole('button', { name: /^Convert —/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Join videos —/ })).toBeVisible()
+
+    // ⚠️ And the spec sheet is NOT here any more (owner, 2026-08-24). It was
+    // the right-hand column, and it was the thing standing in front of the
+    // circle. It still renders under the editor — see the next test.
+    await expect(page.getByRole('heading', { name: /What it does/ })).toHaveCount(0)
+  })
+
+  test('the spec sheet moved under the editor, and every row still opens on click', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await page.goto('/')
+    await drop(page, 'clip.mp4', FIXTURE_BYTES)
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(1)
 
     // Collapsed by default: the summary is on the page, the full reasoning is
-    // not. This is the whole point of the box being succinct — nine paragraphs
-    // in the narrow column buried the ring.
+    // not. This is the whole point of the box being succinct.
     const row = page.getByRole('button', { name: /^Has a ceiling/ })
     await expect(row).toHaveAttribute('aria-expanded', 'false')
     await expect(page.getByText('a five-clip edit costs five sources')).toHaveCount(0)
 
-    // ...and one click reveals it. Nothing was deleted when the box shrank.
+    // ...and one click reveals it. Nothing was deleted when the box shrank, and
+    // nothing was deleted when it moved off the front door either.
     await row.click()
     await expect(row).toHaveAttribute('aria-expanded', 'true')
     await expect(page.getByText('a five-clip edit costs five sources')).toBeVisible()
@@ -347,13 +384,11 @@ test.describe('Universal Video', () => {
     await expect(rows).toHaveCount(9)
   })
 
-  test('the two columns stack ring-first on a phone', async ({ browser }) => {
+  test('the columns stack ring-first on a phone', async ({ browser }) => {
     // Below `lg` the grid collapses, and the ORDER matters: somebody on a phone
-    // should meet the drop target before the drawing of what it does, and both
-    // before the spec sheet — not scroll past a picture and nine rows to reach
-    // the thing they came to use. That is what `order-2` on the illustration
-    // column buys, and it is invisible in the DOM order, which puts the
-    // drawing first.
+    // should meet the drop target before the drawing of what it does. That is
+    // what `order-2` on the illustration column buys, and it is invisible in
+    // the DOM order, which puts the drawing first.
     const context = await browser.newContext({
       viewport: { width: 390, height: 844 },
       hasTouch: true,
@@ -362,18 +397,84 @@ test.describe('Universal Video', () => {
     const page = await context.newPage()
     await page.goto('/')
 
+    const heading = (await page.getByRole('heading', { level: 1 }).boundingBox())!
     const ring = (await page
       .getByRole('button', { name: 'Drop a video here, or choose a file' })
       .boundingBox())!
     const illustration = (await page.getByTestId('illustration').boundingBox())!
-    const honesty = (await page.getByRole('heading', { name: /What it does/ }).boundingBox())!
 
+    expect(ring.y).toBeGreaterThan(heading.y)
     expect(illustration.y).toBeGreaterThan(ring.y + ring.height)
-    expect(honesty.y).toBeGreaterThan(illustration.y + illustration.height)
     // Same column, not side by side — i.e. it really did stack.
-    expect(Math.abs(honesty.x - ring.x)).toBeLessThan(ring.width)
+    expect(Math.abs(illustration.x - ring.x)).toBeLessThan(ring.width * 2)
 
     await context.close()
+  })
+
+  test('the example video opens, and then it is a recent file', async ({ page }) => {
+    await page.goto('/')
+
+    // A first-time visitor has no history, so the slot offers the sample: an
+    // empty "Recent videos" list would be a dead end.
+    await expect(page.getByText('Recent videos')).toHaveCount(0)
+    await page.getByRole('button', { name: /Try with an example video/ }).click()
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(1, { timeout: 30_000 })
+
+    // ⚠️ The example is fetched, not generated — it is `public/Example_Video.mp4`,
+    // 12 seconds of it, three shots so that cutting one off means something.
+    // It is the ONLY request this app makes for a file, and it is for one it
+    // ships itself; see the "nothing is uploaded" spec, which allows it.
+    const clip = page.locator('[data-testid=clip]').first()
+    expect(Number(await clip.getAttribute('data-end'))).toBeCloseTo(12, 1)
+
+    // Having used it once, it IS the recent file — same slot, different offer.
+    await page.reload()
+    const recents = page.getByText('Recent videos')
+    await expect(recents).toBeVisible()
+    await recents.click()
+    // ⚠️ Anchored: the row's own "forget" button is `Forget Example_Video.mp4`,
+    // so an unanchored pattern matches both and fails strict mode.
+    const row = page.getByRole('button', { name: /^Example_Video\.mp4/ })
+    await expect(row).toBeVisible()
+
+    // And it reopens from there without touching the file system again.
+    await row.click()
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(1, { timeout: 30_000 })
+  })
+
+  test('1 Click Compress opens the video and exports it without a second press', async ({ page }) => {
+    test.setTimeout(120_000)
+    await page.goto('/')
+
+    // The pill's own hidden input, which is what its click opens. Handing it
+    // the file is exactly what choosing one in the dialog does.
+    await page
+      .getByTestId('compress-input')
+      .setInputFiles({ name: 'holiday.mp4', mimeType: 'video/mp4', buffer: FIXTURE_BYTES })
+
+    // No Export button was pressed: the finished file is the next thing on
+    // screen. That is the whole claim of the one-click path.
+    await expect(page.getByRole('button', { name: /^Save / })).toBeVisible({ timeout: 90_000 })
+    await expect(page.getByText(/smaller/).first()).toBeVisible()
+  })
+
+  test('Convert opens the file with the export panel announcing itself', async ({ page }) => {
+    await page.goto('/')
+    await page.getByText('More options').click()
+
+    const [chooser] = await Promise.all([
+      page.waitForEvent('filechooser'),
+      page.getByRole('button', { name: /^Convert —/ }).click(),
+    ])
+    await chooser.setFiles({ name: 'holiday.mp4', mimeType: 'video/mp4', buffer: FIXTURE_BYTES })
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(1, { timeout: 30_000 })
+
+    // Somebody who came in through Convert asked for the OUTPUT settings, not
+    // for the editor in general, so the panel says where it is — for a beat,
+    // and then it stops. A highlight that never goes away is a decoration.
+    const panel = page.locator('div.space-y-5:has(select[aria-label="Output frame"])')
+    await expect(panel).toHaveClass(/border-orange-400/)
+    await expect(panel).not.toHaveClass(/border-orange-400/, { timeout: 6_000 })
   })
 
   test('reads a file’s header and predicts the output before anything runs', async ({ page }) => {

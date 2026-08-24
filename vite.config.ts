@@ -62,7 +62,13 @@ export default defineConfig(({ mode }) => {
           // Nothing here is a wasm engine, and nothing should become one. The
           // codecs are the browser's; @unisim/media is kilobytes of container
           // code and belongs in the ordinary precache with everything else.
-          globIgnores: ['**/*.wasm'],
+          //
+          // The example clip is out too, and for a different reason: it is half
+          // a megabyte that only someone who clicks "Try with an example video"
+          // ever needs, and precaching it would make every install pay for it.
+          // It is fetched on demand and works offline only if it has been used
+          // before — which is the right way round for a sample.
+          globIgnores: ['**/*.wasm', '**/Example_Video.mp4'],
         },
         devOptions: { enabled: false }
       })

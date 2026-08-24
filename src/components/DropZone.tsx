@@ -22,16 +22,12 @@ import DropWatermark from './DropWatermark'
 //    ever swallow a drop, which means a nested button inside the ring would be
 //    dead to the mouse. The words "choose a file" are therefore words, not a
 //    control, and the accessible name on the ring says the same thing.
-//  • The encoder warning lives BELOW the ring, outside the drop target. The
-//    centre is about 220px wide and clips 2.5rem of padding off each side; a
-//    paragraph does not go in it.
-//
-//    ⚠️ There used to be a paragraph of prose there too — same tab, same player
-//    and timeline, same no-upload-no-queue list — and it is gone because the
-//    page's own lede in `App.tsx` says all of it. That was invisible while the
-//    two sat in columns apart from each other; the two-column front door put
-//    them one above the other and it read as a stutter. Put copy back here only
-//    if it is about the RING.
+//  • ⚠️ This component is ONLY the ring now. The prose that used to sit under
+//    it was a near-copy of the page lead, and the encoder warning moved to the
+//    foot of the card in `Landing.tsx` — where the rest of the card's words
+//    are. The ring's centre is about 220px wide and clips 2.5rem of padding
+//    off each side; a paragraph does not go in it, and the card around it is
+//    the place for one. Put copy back here only if it is about the RING.
 //  • ⚠️ The ring's interior is painted `#ffffff` by the SDK in both themes, so
 //    the text inside it is fixed dark and carries NO `dark:` variant. Adding
 //    one puts white text on white.
@@ -42,7 +38,6 @@ import DropWatermark from './DropWatermark'
 // the page with no handler would let the browser navigate away from the tab.
 export default function DropZone() {
   const addFiles = useEditorStore((s) => s.addFiles)
-  const supported = useEditorStore((s) => s.supported)
 
   const drop = useFileDrop({
     onFiles: addFiles,
@@ -74,16 +69,6 @@ export default function DropZone() {
           </span>
         </DropRing>
       </div>
-
-      {supported === false && (
-        <p className="mt-6 max-w-md rounded-xl bg-amber-50 px-4 py-3 text-left text-xs leading-relaxed text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-          <strong className="font-semibold">This browser can’t do the encoding.</strong>{' '}
-          Writing the MP4 back out needs a WebCodecs H.264 <em>encoder</em>, and
-          this browser doesn’t have one — Firefox is the usual case. Chrome, Edge
-          and Safari 16.4+ do. You can still drop a file and edit it here, but
-          the export will not run.
-        </p>
-      )}
 
       <DropAnywhere
         show={drop.pageOver}

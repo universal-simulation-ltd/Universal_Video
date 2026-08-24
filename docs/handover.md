@@ -1034,3 +1034,113 @@ hole.
   `min-width: auto` landmine from earlier the same day says that is exactly
   where a grid-column bug hides. This layout has no fixed-width child in a grid
   column, but it has not been proved on iOS.
+
+## 15. The front door becomes Universal PDF's, properly — 2026-08-24
+
+Second pass over §14, same day, owner's list: *"remove all of what it does…;
+header: videos that just work (just work coloured); subheader: Trim it, cut it,
+stack it, intro or outro it, and choose the size and shape it comes out at. Add
+an example video (turns to recent files with use) and 'or' for 1 click compress
+and more options such as convert. Look at Universal PDF again to keep in that
+style (including header size etc)."*
+
+The whole front door now lives in **`components/Landing.tsx`** — `App.tsx` keeps
+the navbar, the editor and the footer. `DropZone.tsx` is the RING and nothing
+else.
+
+### 15.1 The card, top to bottom
+
+Universal PDF's card, in PDF's order, wearing PDF's pill classes:
+
+1. the drop ring;
+2. **"Try with an example video"** — which becomes **"Recent videos"** once
+   there are any, with the example demoted inside the list. Same slot, different
+   offer: a first-time visitor has nothing to be recent, so an empty list is a
+   dead end, and someone with history rarely wants the sample again;
+3. an `or` rule;
+4. **1 Click Compress** — a pill that is also its own drop target;
+5. **More options** — Convert, and Join videos — collapsed.
+
+The `<h1>` scale is PDF's exactly (`text-3xl sm:text-4xl lg:text-5xl`), and the
+landing (not the editor) is vertically centred in the viewport, which is what
+PDF's `min-h-full flex items-center` does.
+
+⚠️ **The headline is no longer the search phrase**, and §12 spent a session
+deciding that it should be. *"Clip, cut and resize a video without uploading it"*
+is still the `<title>`, the og:title, and **the editor's own `<h1>`** — the spec
+now asserts all three plus the new one, so the words are still on the page, one
+screen further in. Do not "restore" it to the front door without asking: it was
+changed on purpose, by the owner, for consistency with PDF and Images.
+
+⚠️ **`Honesty` is off the front door** (same ask) and still renders under the
+editor. Its nine rows are not deleted, and the spec that opens every one of them
+now drops a file first.
+
+### 15.2 Recents, and why a video's list is not a PDF's
+
+`lib/recents.ts` is Universal PDF's file with one difference that changes every
+number in it: **eight PDFs are a few megabytes; eight phone clips are several
+gigabytes.** So this store keeps **4**, refuses any single file over **100 MB**,
+holds **250 MB** in total — and the list SAYS so, because a recents list that
+silently drops the file you cared about is worse than not having one.
+
+`keepWithinBudget()` is the only decision in the file and the only thing with a
+unit test. ⚠️ It `continue`s rather than `break`s: one oversized file part way
+down the list must not evict the small ones behind it — it is over budget, they
+are not.
+
+Nothing in that file throws at its caller. IndexedDB is missing in some private
+windows and full in others, and neither is a reason to fail at opening a video.
+
+### 15.3 One-click compress is two calls, not a second pipeline
+
+`compressNow()` in the store is `addFiles()` then `exportEdit()` — the same two
+things a person would do by hand, with no settings of its own. ⚠️ It does **not**
+force past a refusal: if the memory plan says the edit will not fit, `exportEdit`
+returns and the editor is on screen with the reason, which is where a refused
+Export button leaves you anyway.
+
+⚠️ It takes **one** file. Dropping several on the CIRCLE joins them into one
+movie — that is the app — but "compress" plainly means "this one, smaller", so
+the pill takes the first and says what it did with the rest.
+
+### 15.4 Two React traps, both now commented
+
+- ⚠️ **An effect that clears its own trigger cancels its own timer.** The export
+  panel announces itself when you arrive via Convert: it sets `announcing`,
+  scrolls, and clears the intent. Clearing the intent changes that effect's
+  dependency, so React runs the cleanup — killing the pending `setTimeout` — and
+  the re-run returns early because the intent has gone. The panel stayed lit
+  **for good**. The beat is a second effect keyed on `announcing`.
+- ⚠️ The intent hooks sit **above** `if (!plan) return null`. Hooks are counted
+  per render and that panel returns null before the timeline is planned.
+
+### 15.5 The example clip, and the machine that made it
+
+`public/Example_Video.mp4` — 12 s, 1280×720, 30 fps, **three 4-second shots** in
+different colours so that cutting one off is a visible act, a white block
+travelling across each shot, an orange marker crawling the whole 12 s, and a
+quiet tone that changes pitch per shot so the audio lane has something in it.
+551 KB.
+
+⚠️ **It is excluded from the PWA precache** (`vite.config.ts` `globIgnores`).
+Precaching it would make every install pay half a megabyte for a file only
+someone who presses "Try with an example video" ever needs.
+
+⚠️ **§7 and §13 say "there is no ffmpeg on these machines". That is no longer
+true on the Mac** — Homebrew ffmpeg 8.1.1 is on the path, and it made this clip.
+Two things about that build cost time and will again:
+
+- **No `drawtext`** (built without libfreetype), so nothing in the clip is
+  lettered.
+- **`drawbox` has no `eval` option** in this build, so its `w`/`h` expressions
+  are evaluated once at init and only `x`/`y` see `t`. Worse, drawing onto
+  `gradients` output (rgba) draws **nothing at all, silently** — `format=yuv420p`
+  has to come FIRST in the chain. The animation is `overlay` instead, whose
+  `x`/`y` genuinely are per-frame.
+
+The command is one function repeated three times plus a concat; it is in the
+session's scratch notes rather than checked in, because the file it produces is
+checked in and regenerating it is a once-in-a-product-lifetime job. If it ever
+needs to change: three `gradients` + `color` + `sine` inputs, `overlay` for the
+two moving blocks, `-crf 23 -preset slow`, then `-f concat -c copy`.

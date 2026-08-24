@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { formatBytes, formatDuration, timelineDuration, type MaxHeight, type VideoQuality } from '@unisim/media'
 import {
   FRAME_PRESETS,
@@ -65,6 +65,36 @@ export default function ExportPanel() {
   const frameWidth = useEditorStore(selectFrameWidth)
   const frameHeight = useEditorStore(selectFrameHeight)
 
+  // Somebody who came in through the front door's Convert pill asked for THIS
+  // panel, not for the editor in general — so it scrolls itself into view and
+  // says so for a moment. The intent is cleared as soon as it has been
+  // honoured: it answers "how did this file get opened", once, and a second
+  // file opened later did not come in that way.
+  //
+  // ⚠️ The hooks are above the `if (!plan)` return on purpose. React counts
+  // hooks per render, and this panel returns null before the timeline has been
+  // planned — moving them below is a hooks-order crash on the first frame.
+  const intent = useEditorStore((s) => s.intent)
+  const setIntent = useEditorStore((s) => s.setIntent)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const [announcing, setAnnouncing] = useState(false)
+  useEffect(() => {
+    if (intent !== 'convert') return
+    setAnnouncing(true)
+    panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setIntent(null)
+  }, [intent, setIntent])
+  // ⚠️ The beat is a SECOND effect, and it has to be. Put the `setTimeout` in
+  // the one above and it cancels itself: clearing the intent changes that
+  // effect's own dependency, React runs the cleanup, the pending timer dies,
+  // and the re-run returns early because the intent is gone — leaving the panel
+  // lit up for good.
+  useEffect(() => {
+    if (!announcing) return
+    const t = setTimeout(() => setAnnouncing(false), 2600)
+    return () => clearTimeout(t)
+  }, [announcing])
+
   if (!plan) return null
 
   const quality = QUALITIES.find((q) => q.value === settings.quality)
@@ -74,8 +104,14 @@ export default function ExportPanel() {
   const saving = route === 'compress' && sourceBytes > 0 ? 1 - plan.estimate.bytes / sourceBytes : 0
 
   return (
-    <div className="space-y-3">
-      <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+    <div className="space-y-3" ref={panelRef}>
+      <div
+        className={`space-y-5 rounded-2xl border bg-white p-5 transition-shadow dark:bg-slate-900 ${
+          announcing
+            ? 'border-orange-400 shadow-[0_0_0_4px_rgba(249,115,22,0.18)] dark:border-orange-500'
+            : 'border-slate-200 dark:border-slate-800'
+        }`}
+      >
         {/* The shape of the MOVIE, so it belongs with the output settings and
             not in the clip inspector — a frame is not a property of a clip. */}
         <Field label="Output frame">

@@ -3,8 +3,7 @@ import { DropRing, UniversalAppsNavBar, UpdateNotice } from '@unisim/sdk'
 import UsageTracker from './UsageTracker'
 import AppMenu from './components/Header/AppMenu'
 import ProductLogo from './components/Header/ProductLogo'
-import DropZone from './components/DropZone'
-import VideoIllustration from './components/VideoIllustration'
+import Landing from './components/Landing'
 import SourceBin from './components/SourceBin'
 import Player from './components/Player'
 import Toolbar from './components/Toolbar'
@@ -141,7 +140,13 @@ export default function App() {
 
       <UsageTracker />
 
-      <main className={`${CONTAINER} flex-1 py-8`}>
+      {/* The front door is CENTRED in what is left of the window, the way
+          Universal PDF's is: it is one card and a drawing, and pinned to the
+          top of a tall screen it sits in a pool of empty page. The editor is
+          not — it is taller than the viewport and starts at the top. */}
+      <main
+        className={`${CONTAINER} flex-1 py-8 ${editing ? '' : 'flex flex-col justify-center'}`}
+      >
         {/* The headline sits in the front door's right-hand column while there
             is a front door, and only comes back out to full width once the
             editor is on screen — where there is no column to put it in. It is
@@ -167,69 +172,16 @@ export default function App() {
             </div>
           )}
 
-          {/* The front door is the suite's, not this app's: a drawing of the
-              thing the app does on the left, the headline and the drop circle
-              on the right — the shape Universal PDF and Universal Images
-              already open on, down to the orange word in the headline. A
-              visitor arriving from either of those should recognise the page
-              before they read it.
-
-              `Honesty` used to be the right-hand column and is now the row
-              under both, at full width. Its nine rows are collapsed to one line
-              each, so full width costs it nothing — and it was the wrong thing
-              to have standing beside the drop target anyway: a spec sheet is
-              what you read after you understand what the tool is, and the
-              picture is what tells you that.
-
-              Below `lg` the columns stack ILLUSTRATION LAST (`order-2`), which
-              is the right order on a phone: the headline, the target, then the
-              drawing. */}
+          {/* The front door lives in `Landing.tsx` — the drawing, the
+              headline, and the one card that holds the circle, the recents,
+              the one-click path and More options. It is Universal PDF's shape
+              on purpose (owner, 2026-08-24), which is also where the `<h1>`
+              went and why `Honesty` is no longer up here: it still renders
+              under the EDITOR, below. */}
           {!editing ? (
             <>
-              <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-16">
-                <div className="order-2 flex justify-center lg:order-1">
-                  <VideoIllustration />
-                </div>
-
-                <div className="order-1 lg:order-2">
-                  <h1 className="text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl dark:text-slate-100">
-                    {/* ⚠️ The `{' '}` is load-bearing and the full stop is
-                        deliberately absent. A `<br />` contributes NOTHING to
-                        `textContent`, so without that space the headline reads
-                        "…a videowithout…" to anything that isn't a browser —
-                        the e2e spec, and a screen reader. The sentence has to
-                        stay character-for-character the same as the `<title>`
-                        and the og:title; see `index.html`. */}
-                    Clip, cut and resize a video{' '}
-                    <br />
-                    without{' '}
-                    <span className="text-orange-600 dark:text-orange-400">uploading it</span>
-                  </h1>
-                  {/* The one paragraph. `DropZone` used to carry a second,
-                      near-identical one under the ring — same tab, same player
-                      and timeline, same no-upload-no-queue list — which was
-                      invisible while the two were columns apart and reads as a
-                      stutter now they are stacked. This is the fuller of the
-                      two; the ring keeps only what is about the ring. */}
-                  <p className="mt-3 max-w-md text-sm leading-relaxed text-slate-600 dark:text-slate-400">
-                    Drop an MP4, M4V or MOV and it is opened right here, in this
-                    tab, by your own browser — with a player and a timeline.
-                    Trim it, cut it, stack clips, add an image as an intro or an
-                    outro, and choose the size and shape it comes out at. Make it
-                    smaller too, if that is all you came for. No upload, no account,
-                    no size cap, no watermark and no queue.
-                  </p>
-
-                  <div className="mt-7 space-y-4">
-                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-6 shadow-sm sm:px-8 dark:border-slate-800 dark:bg-slate-900">
-                      <DropZone />
-                    </div>
-                    <Reading show={status === 'reading'} />
-                  </div>
-                </div>
-              </div>
-
-              <Honesty />
+              <Landing />
+              <Reading show={status === 'reading'} />
             </>
           ) : (
             <>
