@@ -209,15 +209,12 @@ export default function App() {
       <footer className="border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         <div className={`${CONTAINER} flex flex-row items-center gap-3 py-4 text-xs text-slate-500 sm:gap-4 dark:text-slate-400`}>
           <span>
-            100% free — every feature, no paywalls. Your video never leaves this
-            device. Hosted by{' '}
-            <a
-              href="https://www.unisim.co.uk"
-              target="_blank"
-              rel="noreferrer"
-              className="text-slate-700 underline-offset-2 hover:text-orange-700 hover:underline dark:text-slate-300 dark:hover:text-orange-400"
-            >
-              UNI SIM
+            With{' '}
+            <span aria-hidden="true" className="text-orange-600 dark:text-orange-400">&hearts;</span>
+            <span className="sr-only">love</span>{' '}
+            from{' '}
+            <a href="https://www.unisim.co.uk" target="_blank" rel="noreferrer" className="text-slate-700 underline-offset-2 hover:text-orange-700 hover:underline dark:text-slate-300 dark:hover:text-orange-400">
+              UNISIM.co.uk
             </a>
           </span>
           <a
