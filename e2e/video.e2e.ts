@@ -308,15 +308,20 @@ test.describe('Universal Video', () => {
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.goto('/')
 
-    // Two columns, the shape Compress and Converter already use: the ring on
-    // the left, "what it does" on the right. Asserted GEOMETRICALLY rather than
-    // by class name — the point is that they are side by side, and a class
-    // assertion would pass on a grid that had silently collapsed.
+    // Two columns, the shape Universal PDF and Universal Images open on: the
+    // drawing of what the app does on the left, the headline and the drop ring
+    // on the right — and the spec sheet as the row underneath both. Asserted
+    // GEOMETRICALLY rather than by class name: the point is that they are side
+    // by side, and a class assertion would pass on a grid that had silently
+    // collapsed.
     const ring = page.getByRole('button', { name: 'Drop a video here, or choose a file' })
     const box = page.getByRole('heading', { name: /What it does/ })
+    const illustration = page.getByTestId('illustration')
     const ringBox = (await ring.boundingBox())!
     const honestyBox = (await box.boundingBox())!
-    expect(honestyBox.x).toBeGreaterThan(ringBox.x + ringBox.width)
+    const illustrationBox = (await illustration.boundingBox())!
+    expect(illustrationBox.x + illustrationBox.width).toBeLessThan(ringBox.x)
+    expect(honestyBox.y).toBeGreaterThan(ringBox.y + ringBox.height)
 
     // Collapsed by default: the summary is on the page, the full reasoning is
     // not. This is the whole point of the box being succinct — nine paragraphs
@@ -344,8 +349,11 @@ test.describe('Universal Video', () => {
 
   test('the two columns stack ring-first on a phone', async ({ browser }) => {
     // Below `lg` the grid collapses, and the ORDER matters: somebody on a phone
-    // should meet the drop target before the spec sheet, not scroll past nine
-    // rows to reach it.
+    // should meet the drop target before the drawing of what it does, and both
+    // before the spec sheet — not scroll past a picture and nine rows to reach
+    // the thing they came to use. That is what `order-2` on the illustration
+    // column buys, and it is invisible in the DOM order, which puts the
+    // drawing first.
     const context = await browser.newContext({
       viewport: { width: 390, height: 844 },
       hasTouch: true,
@@ -357,9 +365,11 @@ test.describe('Universal Video', () => {
     const ring = (await page
       .getByRole('button', { name: 'Drop a video here, or choose a file' })
       .boundingBox())!
+    const illustration = (await page.getByTestId('illustration').boundingBox())!
     const honesty = (await page.getByRole('heading', { name: /What it does/ }).boundingBox())!
 
-    expect(honesty.y).toBeGreaterThan(ring.y + ring.height)
+    expect(illustration.y).toBeGreaterThan(ring.y + ring.height)
+    expect(honesty.y).toBeGreaterThan(illustration.y + illustration.height)
     // Same column, not side by side — i.e. it really did stack.
     expect(Math.abs(honesty.x - ring.x)).toBeLessThan(ring.width)
 
@@ -447,6 +457,14 @@ test.describe('Universal Video', () => {
     expect(right.track).toBe(0)
 
     const secondClip = page.locator('[data-testid=clip]').nth(1)
+    // ⚠️ Scroll it into view FIRST, and take the box after. `page.mouse` works
+    // in viewport coordinates and does no scrolling of its own, so a clip below
+    // the fold gets a drag aimed at whatever happens to be at those coordinates
+    // — which is nothing, and the test fails with the clips untouched. This
+    // used to pass on an accident: filling the Playhead field above scrolled
+    // the page far enough to bring the lane up, and the front door getting one
+    // paragraph shorter was enough to stop it happening.
+    await secondClip.scrollIntoViewIfNeeded()
     const box = (await secondClip.boundingBox())!
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
     await page.mouse.down()

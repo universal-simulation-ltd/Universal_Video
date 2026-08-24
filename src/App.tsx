@@ -4,6 +4,7 @@ import UsageTracker from './UsageTracker'
 import AppMenu from './components/Header/AppMenu'
 import ProductLogo from './components/Header/ProductLogo'
 import DropZone from './components/DropZone'
+import VideoIllustration from './components/VideoIllustration'
 import SourceBin from './components/SourceBin'
 import Player from './components/Player'
 import Toolbar from './components/Toolbar'
@@ -141,22 +142,22 @@ export default function App() {
       <UsageTracker />
 
       <main className={`${CONTAINER} flex-1 py-8`}>
-        <header className="mb-8">
-          {/* What the app is FOR, in the order it is for it: clip, cut, resize
-              — and smaller as one of the things that happens on the way out.
-              The old headline was the search phrase verbatim and has moved to
-              the meta description; see index.html before reordering these. */}
-          <h1 className="text-2xl font-semibold text-slate-900 sm:text-3xl dark:text-slate-100">
-            Clip, cut and resize a video without uploading it
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">
-            Drop an MP4, M4V or MOV and it is opened right here, in this tab, by
-            your own browser — with a player and a timeline. Trim it, cut it,
-            stack clips, add an intro or an outro, and choose the size and shape
-            it comes out at. Make it smaller too, if that is all you came for.
-            No upload, no account, no size cap, no watermark and no queue.
-          </p>
-        </header>
+        {/* The headline sits in the front door's right-hand column while there
+            is a front door, and only comes back out to full width once the
+            editor is on screen — where there is no column to put it in. It is
+            the same `<h1>` either way, and the same words: the app has one, and
+            it is what the page is about. */}
+        {editing && (
+          <header className="mb-8">
+            {/* What the app is FOR, in the order it is for it: clip, cut, resize
+                — and smaller as one of the things that happens on the way out.
+                The old headline was the search phrase verbatim and has moved to
+                the meta description; see index.html before reordering these. */}
+            <h1 className="text-2xl font-semibold text-slate-900 sm:text-3xl dark:text-slate-100">
+              Clip, cut and resize a video without uploading it
+            </h1>
+          </header>
+        )}
 
         <div className="space-y-4">
           {error && (
@@ -166,27 +167,70 @@ export default function App() {
             </div>
           )}
 
-          {/* The front door is two columns, the shape Universal Compress and
-              Universal Converter already use: the thing you came to do on the
-              left, what the app is on the right. Before this, `Honesty`'s nine
-              paragraphs sat UNDER the ring at full width and pushed everything
-              else off the first screen — the drop target was competing with an
-              essay for the same column. Beside it, and collapsed to one line a
-              row, it reads as a spec sheet next to the tool.
+          {/* The front door is the suite's, not this app's: a drawing of the
+              thing the app does on the left, the headline and the drop circle
+              on the right — the shape Universal PDF and Universal Images
+              already open on, down to the orange word in the headline. A
+              visitor arriving from either of those should recognise the page
+              before they read it.
 
-              Both columns collapse to one below `lg`, ring first, which is the
-              right order on a phone: the target, then the reading. */}
+              `Honesty` used to be the right-hand column and is now the row
+              under both, at full width. Its nine rows are collapsed to one line
+              each, so full width costs it nothing — and it was the wrong thing
+              to have standing beside the drop target anyway: a spec sheet is
+              what you read after you understand what the tool is, and the
+              picture is what tells you that.
+
+              Below `lg` the columns stack ILLUSTRATION LAST (`order-2`), which
+              is the right order on a phone: the headline, the target, then the
+              drawing. */}
           {!editing ? (
-            <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(300px,0.85fr)]">
-              <div className="space-y-4">
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-6 sm:px-8 dark:border-slate-800 dark:bg-slate-900">
-                  <DropZone />
+            <>
+              <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-16">
+                <div className="order-2 flex justify-center lg:order-1">
+                  <VideoIllustration />
                 </div>
-                <Reading show={status === 'reading'} />
+
+                <div className="order-1 lg:order-2">
+                  <h1 className="text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl dark:text-slate-100">
+                    {/* ⚠️ The `{' '}` is load-bearing and the full stop is
+                        deliberately absent. A `<br />` contributes NOTHING to
+                        `textContent`, so without that space the headline reads
+                        "…a videowithout…" to anything that isn't a browser —
+                        the e2e spec, and a screen reader. The sentence has to
+                        stay character-for-character the same as the `<title>`
+                        and the og:title; see `index.html`. */}
+                    Clip, cut and resize a video{' '}
+                    <br />
+                    without{' '}
+                    <span className="text-orange-600 dark:text-orange-400">uploading it</span>
+                  </h1>
+                  {/* The one paragraph. `DropZone` used to carry a second,
+                      near-identical one under the ring — same tab, same player
+                      and timeline, same no-upload-no-queue list — which was
+                      invisible while the two were columns apart and reads as a
+                      stutter now they are stacked. This is the fuller of the
+                      two; the ring keeps only what is about the ring. */}
+                  <p className="mt-3 max-w-md text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+                    Drop an MP4, M4V or MOV and it is opened right here, in this
+                    tab, by your own browser — with a player and a timeline.
+                    Trim it, cut it, stack clips, add an image as an intro or an
+                    outro, and choose the size and shape it comes out at. Make it
+                    smaller too, if that is all you came for. No upload, no account,
+                    no size cap, no watermark and no queue.
+                  </p>
+
+                  <div className="mt-7 space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-6 shadow-sm sm:px-8 dark:border-slate-800 dark:bg-slate-900">
+                      <DropZone />
+                    </div>
+                    <Reading show={status === 'reading'} />
+                  </div>
+                </div>
               </div>
 
               <Honesty />
-            </div>
+            </>
           ) : (
             <>
               <Reading show={status === 'reading'} />

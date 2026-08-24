@@ -33,3 +33,200 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── The landing illustration ──────────────────────────────────────────────
+   Every rule below is a window on ONE number — `--t`, 0 → 1 — written onto
+   `.vid-illu` by `components/VideoIllustration.tsx` on each animation frame.
+   `--from` and `--span` say which slice of the sweep an element moves in;
+   `--e` is that slice, eased.
+
+   Why one clock rather than ten `@keyframes`: an element part way through a
+   keyframe animation cannot be told to return to its own first frame
+   (`animation-play-state: paused` freezes it where it stands, and removing the
+   animation snaps it), and the pointer arriving has to glide the whole picture
+   back to frame 0. With one number that is a single interpolation. See
+   `lib/illustrationClock.ts`.
+
+   ⚠️ Reduced motion is handled in the component, which parks `--t` at 1 and
+   never starts the loop — the finished frame, not a slower version of it. The
+   blanket `prefers-reduced-motion` rule above cannot help here: there is no
+   CSS animation to shorten. */
+.vid-illu {
+  --t: 0;
+
+  /* Every surface in the drawing, so it can be swapped for the dark theme in
+     one place. Hard-coded colours are left alone where they are right in both:
+     the orange, the badge's green, and everything sitting on the player's own
+     dark screen. */
+  --vi-surface: #ffffff;
+  --vi-edge: #cbd5e1;
+  --vi-well: #f8fafc;
+  --vi-clip: #fff7ed;
+  --vi-rule: #cbd5e1;
+  --vi-bar-track: #e2e8f0;
+  --vi-ink: #0f172a;
+  --vi-muted: #64748b;
+  --vi-badge-bg: #ecfdf5;
+  --vi-badge-ink: #059669;
+}
+
+.dark .vid-illu {
+  --vi-surface: #0f172a;
+  --vi-edge: #334155;
+  --vi-well: #1e293b;
+  --vi-clip: #431407;
+  --vi-rule: #475569;
+  --vi-bar-track: #334155;
+  --vi-ink: #e2e8f0;
+  --vi-muted: #94a3b8;
+  --vi-badge-bg: #052e16;
+  --vi-badge-ink: #34d399;
+}
+
+/* Defaults for every part. The universal selector is scoped to the
+   illustration — about forty nodes. */
+.vid-illu * {
+  --from: 0;
+  --span: 1;
+  --p: clamp(0, (var(--t) - var(--from)) / var(--span), 1);
+  --e: calc(var(--p) * var(--p) * (3 - 2 * var(--p)));
+}
+
+/* The playhead runs from the start of the clip to the cut: x 64 → 226, which
+   is 43.5% of the clip's 64 → 436, which is 18 seconds of 42. */
+.vid-illu .vi-playhead {
+  transform: translateX(calc(162px * var(--e)));
+  --from: 0.04;
+  --span: 0.34;
+}
+
+/* The same position, said again on the player's own scrub bar. 0.435 and
+   155px are that same 43.5%, of a 356px bar. */
+.vid-illu .vi-scrub {
+  transform: scaleX(calc(0.435 * var(--e)));
+  --from: 0.04;
+  --span: 0.34;
+}
+.vid-illu .vi-scrub-knob {
+  transform: translateX(calc(155px * var(--e)));
+  --from: 0.04;
+  --span: 0.34;
+}
+
+/* The timecode ticking over: 00:00 → 00:09 → 00:18, each handing on to the
+   next with a hair of overlap so the pill is never empty. The middle value is
+   the nested pair — one window to bring it in, one to take it away. */
+.vid-illu .vi-tc-a {
+  opacity: calc(1 - var(--e));
+  --from: 0.12;
+  --span: 0.04;
+}
+.vid-illu .vi-tc-b {
+  opacity: var(--e);
+  --from: 0.13;
+  --span: 0.04;
+}
+.vid-illu .vi-tc-b-out {
+  opacity: calc(1 - var(--e));
+  --from: 0.24;
+  --span: 0.04;
+}
+.vid-illu .vi-tc-c {
+  opacity: var(--e);
+  --from: 0.25;
+  --span: 0.04;
+}
+
+/* Play → pause while it runs → play again once it stops at the cut. */
+.vid-illu .vi-glyph-play {
+  opacity: calc(1 - var(--e));
+  --from: 0.02;
+  --span: 0.05;
+}
+.vid-illu .vi-glyph-pause {
+  opacity: var(--e);
+  --from: 0.08;
+  --span: 0.05;
+}
+.vid-illu .vi-glyph-pause-out {
+  opacity: calc(1 - var(--e));
+  --from: 0.38;
+  --span: 0.05;
+}
+.vid-illu .vi-glyph-play-again {
+  opacity: var(--e);
+  --from: 0.44;
+  --span: 0.05;
+}
+
+/* The playhead's arrow gets out of the way as the scissors arrive: the two
+   are the same size in the same place, and both at once is a smudge. */
+.vid-illu .vi-playhead-arrow {
+  opacity: calc(1 - var(--e));
+  --from: 0.20;
+  --span: 0.08;
+}
+
+/* The scissors ride in on the playhead and leave with the tail. Two nested
+   groups, because that is two windows on one element and the opacities
+   multiply. */
+.vid-illu .vi-scissors-in {
+  opacity: var(--e);
+  transform: scale(calc(0.95 + 0.45 * var(--e)));
+  --from: 0.22;
+  --span: 0.10;
+}
+.vid-illu .vi-scissors-out {
+  opacity: calc(1 - var(--e));
+  --from: 0.50;
+  --span: 0.10;
+}
+
+/* The ghost of the tail, in just before it goes, so the shorter clip has
+   something to be shorter than. */
+.vid-illu .vi-ghost {
+  opacity: calc(0.75 * var(--e));
+  --from: 0.44;
+  --span: 0.08;
+}
+
+/* The tail is let go of: it slides off its seam, tips, and drops away. */
+.vid-illu .vi-tail {
+  opacity: calc(1 - var(--e));
+  transform: translate(calc(20px * var(--e)), calc(30px * var(--e))) rotate(calc(2.5deg * var(--e)));
+  transform-origin: 226px 376px;
+  --from: 0.46;
+  --span: 0.16;
+}
+
+/* The selection draws itself round what is left, starting as the tail leaves —
+   it is also what seals the head's open right edge (see the ⚠️ in
+   `VideoIllustration.tsx`), so it must not lag behind the cut. 460 is
+   comfortably longer than the ~430-unit perimeter: a dash shorter than the
+   perimeter repeats and a second segment appears on the far side. */
+.vid-illu .vi-selected {
+  stroke-dasharray: 460;
+  stroke-dashoffset: calc(460 * (1 - var(--e)));
+  --from: 0.48;
+  --span: 0.12;
+}
+
+/* Before, then after, in the same place. */
+.vid-illu .vi-stat-before {
+  opacity: calc(1 - var(--e));
+  --from: 0.54;
+  --span: 0.10;
+}
+.vid-illu .vi-stat-after {
+  opacity: var(--e);
+  --from: 0.66;
+  --span: 0.10;
+}
+
+/* The saving stamps last, and the sweep holds on it before turning back. */
+.vid-illu .vi-badge {
+  transform: scale(var(--e));
+  opacity: var(--e);
+  --from: 0.78;
+  --span: 0.14;
+}

@@ -920,3 +920,117 @@ and does not install LAME).
   big-frame path, not coverage of this bug, and its comment says so. If you
   change how the reader feeds or drains a decoder, the check that means anything
   is still: export a real phone clip, reframed, in real Chrome, several times.
+
+## 14. The front door is two columns, and the left one draws itself — 2026-08-24
+
+Owner ask: *"make the landing page more like PDF / Images — animated SVG on the
+left, upload on the right, with an animated SVG inside the orange ring (if not
+already done)."*
+
+The ring's own animated backdrop **was** already done (`DropWatermark`, the
+five-stroke clip-on-a-timeline from earlier the same day), so this was the other
+half: the page shape.
+
+### 14.1 What moved
+
+| Was | Is |
+|---|---|
+| Headline + lede full width, above everything | Headline + lede in the RIGHT column, next to the ring |
+| `[ ring card 1.55fr | Honesty 0.85fr ]` | `[ illustration | headline + ring card ]`, `Honesty` full width beneath |
+| `DropZone` carried a paragraph of prose under the ring | Gone — it duplicated the lede (see below) |
+| `<header>` always rendered | Rendered **only while editing** |
+
+The `<h1>` is the same sentence in both branches. It has to be: the e2e spec, the
+`<title>` and the og:title all assert it character for character (§12). Two
+traps in the JSX version of it, both commented in `App.tsx`:
+
+- ⚠️ **`<br />` contributes NOTHING to `textContent`.** Without the explicit
+  `{' '}` before it, the headline reads *"…a videowithout uploading it"* to the
+  spec, to a screen reader, and to anything that isn't a browser laying out
+  boxes.
+- ⚠️ **No full stop.** Images ends its headline with one; this one cannot,
+  because the sentence has to match `<title>` exactly.
+
+The prose that came out of `DropZone` was a near-copy of the page lede — same
+tab, same player and timeline, same no-upload-no-queue list. It was invisible
+while the two sat in columns apart from each other, and read as a stutter the
+moment the two-column front door stacked them. What stayed in `DropZone` is what
+is about the RING: the three lines inside it and the Firefox encoder warning.
+
+### 14.2 The illustration — one clock, ten windows
+
+`components/VideoIllustration.tsx` + the `.vid-illu` rules at the bottom of
+`src/index.css`. A clip on a timeline is played to the playhead, cut there, and
+its tail dropped; the line under it goes 00:42 · 24.6 MB → 00:18 · 5.9 MB and a
+−76% badge stamps into the track the tail gave back.
+
+Everything is a window on **one** number — `--t`, 0 → 1, written on the wrapper
+by a rAF loop and read by every CSS rule. Copied deliberately from
+`PdfIllustration` and `ImageIllustration`, for the reason those two give: an
+element part way through a `@keyframes` cannot be told to return to its own first
+frame (`animation-play-state: paused` freezes it where it stands, removing the
+animation snaps it), and the pointer arriving has to glide the whole picture back
+to frame 0. With one number that is a single interpolation.
+
+⚠️ **This is the suite's THIRD copy of that loop.** `ImageIllustration` already
+carries the note that a third should go to `@unisim/sdk` as a hook instead. What
+went to `lib/illustrationClock.ts` here is only the pure maths — `smoothstep` and
+its exact inverse, which is what lets a mid-glide exit resume on the frame that
+is already on screen rather than snapping — because that is the part with an
+honest unit test. The rAF loop is still pasted. A FOURTH copy should not be.
+
+Things learned drawing it, all of them commented in place:
+
+- ⚠️ **Neither half of the clip is a rounded rect.** Two `rx="8"` rects abutting
+  show four rounded corners and a seam at frame 0 — a picture of a cut that has
+  already happened, which is the one thing frame 0 must not be. Each piece is
+  drawn twice instead: a closed path for the fill with a square inner edge, and
+  an **open** path for the outline that omits that edge. The two outlines join
+  into one unbroken boundary. What seals the survivor's open right edge
+  afterwards is the selection outline, drawn as the tail leaves — and its square
+  corner is correct, because a cut edge is square.
+- ⚠️ **A single element cannot fade out AND back in from one window.** Where
+  something has to (the pause glyph, the scissors) it is two nested groups whose
+  opacities multiply — one window brings it in, the other takes it away.
+- ⚠️ **THREE timecodes, not two.** Two would leave the pill empty for a sixth of
+  the sweep, which reads as a broken player. The same applies to any pair of
+  "before/after" texts sharing a spot: they need a beat between them, not a gap.
+- ⚠️ **`transformOrigin` on a nested SVG group is LOCAL.** Naming the scissors'
+  absolute y (`0px 304px`) instead of `0px 0px` scales it about a point 300 units
+  away and throws it up inside the player. It renders, it just renders wrong.
+- ⚠️ **The geometry is the arithmetic.** The cut sits at x = 226 because the clip
+  runs 64 → 436 and 18 seconds is 43.5% of 42, and the scrub bar fills to that
+  same 43.5%. Three CSS windows carry those numbers; move the cut and all three
+  move with it or the picture lies about itself.
+- Every surface paints from a `--vi-*` custom property so the drawing has a dark
+  theme. They are inline `style` and not `fill=`/`stroke=` attributes because a
+  **presentation attribute cannot hold a `var()`**.
+- Reduced motion parks `--t` at **1** and never starts the loop: the finished
+  frame, not a slower version of it and not frame 0 — frame 0 is the clip before
+  anything has been done to it, the still that says least.
+
+### 14.3 The e2e drag test was passing on an accident
+
+`cutting splits picture AND sound…` started failing, and it was NOT the drag.
+`page.mouse` works in viewport coordinates and does no scrolling of its own; the
+clip lane sits below the fold at 1280×720, so the drag was aimed at nothing. It
+used to work because filling the `Playhead` field above happened to scroll the
+page 440px — and the front door getting **one paragraph shorter** was enough to
+stop that happening. Fixed properly with `scrollIntoViewIfNeeded()` before the
+box is measured. Any other `page.mouse` drag in this spec has the same latent
+hole.
+
+### 14.4 What was checked
+
+- ✅ 20/20 Playwright specs, 139 unit tests, clean `tsc -b` + build, against
+  **SDK 0.110.0** (a concurrent session bumped it mid-work and moved the
+  watermark onto `DropRing`'s new `watermark` prop — verified the ring still
+  draws exactly one).
+- ✅ The whole sweep photographed at every tenth of `--t`, light and dark, plus
+  the reduced-motion still and the hover-park/resume behaviour.
+- ✅ 390×844 and 820×1180: no horizontal overflow, and the stack order is
+  headline → ring → drawing → spec sheet, which the phone spec now asserts.
+- ⚠️ **Chromium only.** WebKit was not run, and the PDF landing page's
+  `min-width: auto` landmine from earlier the same day says that is exactly
+  where a grid-column bug hides. This layout has no fixed-width child in a grid
+  column, but it has not been proved on iOS.
