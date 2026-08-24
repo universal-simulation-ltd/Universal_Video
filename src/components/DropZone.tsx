@@ -22,9 +22,16 @@ import DropWatermark from './DropWatermark'
 //    ever swallow a drop, which means a nested button inside the ring would be
 //    dead to the mouse. The words "choose a file" are therefore words, not a
 //    control, and the accessible name on the ring says the same thing.
-//  • The prose and the encoder warning live BELOW the ring, outside the drop
-//    target. The centre is about 220px wide and clips 2.5rem of padding off
-//    each side; three paragraphs do not go in it.
+//  • The encoder warning lives BELOW the ring, outside the drop target. The
+//    centre is about 220px wide and clips 2.5rem of padding off each side; a
+//    paragraph does not go in it.
+//
+//    ⚠️ There used to be a paragraph of prose there too — same tab, same player
+//    and timeline, same no-upload-no-queue list — and it is gone because the
+//    page's own lede in `App.tsx` says all of it. That was invisible while the
+//    two sat in columns apart from each other; the two-column front door put
+//    them one above the other and it read as a stutter. Put copy back here only
+//    if it is about the RING.
 //  • ⚠️ The ring's interior is painted `#ffffff` by the SDK in both themes, so
 //    the text inside it is fixed dark and carries NO `dark:` variant. Adding
 //    one puts white text on white.
@@ -57,12 +64,7 @@ export default function DropZone() {
         {...drop.dropzoneProps}
         className="w-64 max-w-full cursor-pointer rounded-full focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-orange-600 sm:w-72"
       >
-        <DropRing over={drop.over} size="100%">
-          {/* Backdrop. A CHILD of the ring, not behind it: DropRing paints an
-              opaque white interior, so anything behind it is covered. */}
-          <div className="pointer-events-none absolute inset-[14%] opacity-[0.3]" aria-hidden="true">
-            <DropWatermark />
-          </div>
+        <DropRing over={drop.over} size="100%" watermark={<DropWatermark />}>
           <span className="text-base font-semibold text-slate-900">
             Drop a video here
           </span>
@@ -72,14 +74,6 @@ export default function DropZone() {
           </span>
         </DropRing>
       </div>
-
-      <p className="mt-8 max-w-md text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-        It opens in this tab, with a player and a timeline under it: trim it, cut
-        it at the playhead, and pick the size and shape it comes out at. Drop
-        several and they line up one after another. Images are taken too, as an
-        intro or an outro card. Nothing is uploaded, and there is no size cap, no
-        account, no watermark and no queue.
-      </p>
 
       {supported === false && (
         <p className="mt-6 max-w-md rounded-xl bg-amber-50 px-4 py-3 text-left text-xs leading-relaxed text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
