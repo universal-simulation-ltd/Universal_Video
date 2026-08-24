@@ -1,5 +1,6 @@
 import { DropAnywhere, DropRing, useFileDrop } from '@unisim/sdk'
 import { EDITOR_ACCEPT, useEditorStore } from '../stores/editorStore'
+import DropWatermark from './DropWatermark'
 
 // The first screen, and the only one that isn't the editor. Its job is to say
 // what this is and take some files — one file or several, a trim or a five-clip
@@ -57,6 +58,11 @@ export default function DropZone() {
         className="w-64 max-w-full cursor-pointer rounded-full focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-orange-600 sm:w-72"
       >
         <DropRing over={drop.over} size="100%">
+          {/* Backdrop. A CHILD of the ring, not behind it: DropRing paints an
+              opaque white interior, so anything behind it is covered. */}
+          <div className="pointer-events-none absolute inset-[14%] opacity-[0.3]" aria-hidden="true">
+            <DropWatermark />
+          </div>
           <span className="text-base font-semibold text-slate-900">
             Drop a video here
           </span>
