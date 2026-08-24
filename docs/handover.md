@@ -1144,3 +1144,24 @@ session's scratch notes rather than checked in, because the file it produces is
 checked in and regenerating it is a once-in-a-product-lifetime job. If it ever
 needs to change: three `gradients` + `color` + `sine` inputs, `overlay` for the
 two moving blocks, `-crf 23 -preset slow`, then `-f concat -c copy`.
+
+### 15.6 ⚠️ The example clip shipped broken for an hour, and why
+
+Reported by the owner within minutes of the deploy: *"This file has no MP4 movie
+header, so its frames can't be located — it may be corrupt, or not really an
+MP4."* The file was fine. The **rewrite rule was missing**.
+
+`dist/` is FLAT — Vite's `base` rewrites URLs inside the HTML, it does not put
+files in `dist/video/` — so `public/_redirects` names every static file
+individually under `/video/`, and the last line is a catch-all that serves the
+SPA shell. A new file in `public/` with no rule of its own therefore gets
+`index.html` back: **status 200, content-type `text/html`**, which the app
+dutifully handed to the demuxer.
+
+Universal Images has had exactly this line for `Example_Image.jpg` since the day
+it shipped one; Video's was simply never added. **Anything new in `public/` needs
+a `_redirects` line, and the e2e suite cannot catch it** — the dev server serves
+`public/` directly, so every spec passes on a build that is broken in production.
+The only checks that would have caught it are a live `curl` of the URL after the
+deploy, and the content-type guard now in `loadExample`, which turns a repeat
+into a sentence about the site rather than an accusation against the file.

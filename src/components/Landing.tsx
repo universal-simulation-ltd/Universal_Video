@@ -62,6 +62,17 @@ export default function Landing() {
       const res = await fetch(url)
       if (!res.ok) throw new Error(`Couldn’t load the example video (${res.status})`)
       const blob = await res.blob()
+      // ⚠️ Check what came back, not just the status. Under `/video/` the app is
+      // served by rewrite rules (`public/_redirects`), and a missing rule for
+      // this file makes the SPA fallback answer with index.html — status 200,
+      // content-type text/html, and a "file" the decoder then reports as a
+      // corrupt MP4. That shipped once. If it happens again, this says which of
+      // the two things is actually wrong.
+      if (!blob.type.startsWith('video/') && !blob.type.startsWith('application/octet-stream')) {
+        throw new Error(
+          `The example video isn’t being served properly — the site returned ${blob.type || 'no type'} instead of a video. Nothing is wrong with your browser; drop a file of your own and it will work.`,
+        )
+      }
       await addFiles([
         new File([blob], 'Example_Video.mp4', { type: blob.type || 'video/mp4' }),
       ])

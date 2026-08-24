@@ -21,6 +21,15 @@
 /video/icon-192.png       /icon-192.png         200
 /video/icon-512.png       /icon-512.png         200
 
+# The example clip. ⚠️ It NEEDS a rule of its own, like every other file in
+# `public/`: `dist/` is flat, so without one the SPA fallback below answers
+# `/video/Example_Video.mp4` with index.html — status 200, content-type
+# text/html — and the app reports the file it ships itself as "no MP4 movie
+# header… may be corrupt". Which is exactly what it did, in production, for the
+# hour this line was missing. Universal Images has had the same line for its
+# example image since the day it shipped one.
+/video/Example_Video.mp4  /Example_Video.mp4    200
+
 # SEO crawler files.
 /video/robots.txt         /robots.txt           200
 /video/sitemap.xml        /sitemap.xml          200
