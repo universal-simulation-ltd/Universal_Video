@@ -180,9 +180,10 @@ export default function Player() {
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-      {/* The timeline's scroll viewport is laid out from this same width, in
-          this same box, so the needle lines up under the picture — including
-          when an upright frame has narrowed it. */}
+      {/* The PICTURE is capped and centred — `lib/layout.ts` — and that box is
+          about the picture only. The timeline is no longer laid out from it:
+          it matches the scrub bar below, which is the other thing measuring
+          time. See the ⚠️ on the scrub. */}
       <div className="mx-auto w-full" style={{ maxWidth: boxWidth }}>
         <canvas
           ref={canvasRef}
@@ -195,7 +196,40 @@ export default function Player() {
         />
       </div>
 
-      <div className="mt-3 flex items-center gap-3">
+      {/* ⚠️ THE SCRUB IS ON ITS OWN ROW, AND THAT IS THE WHOLE POINT.
+          It used to share a row with the button and the clock — `flex-1`
+          between two `shrink-0`s — so its time axis started after the Play
+          button and stopped before the clock, while the timeline below ran the
+          full width of its card. The two were the same movie measured against
+          two different rulers: the knob at half way and the needle at half way
+          were ~120px apart at 1440, and further at every other width.
+
+          On its own row it is exactly the card's content box, which is exactly
+          what the timeline's viewport is — so they agree structurally, at every
+          breakpoint and for every duration, rather than by arithmetic somebody
+          has to keep true. Do not put anything back on this row.
+
+          (The residual: a native range's thumb CENTRE travels from half a thumb
+          in to half a thumb short of the end, so t=0 and t=duration sit ~8px
+          inside the needle's own 0…width. Everything between is exact. Fixing
+          those 8px means `appearance-none` and hand-drawing the track in both
+          engines, which is a lot of CSS to buy half a thumb.) */}
+      <input
+        type="range"
+        min={0}
+        max={Math.max(duration, 0.1)}
+        step={0.01}
+        value={Math.min(playheadSec, duration)}
+        aria-label="Playhead"
+        data-testid="scrub"
+        onChange={(e) => {
+          setPlaying(false)
+          seek(Number(e.target.value))
+        }}
+        className="mt-3 block w-full accent-orange-600"
+      />
+
+      <div className="mt-2 flex items-center gap-3">
         <button
           type="button"
           onClick={() => setPlaying(!playing)}
@@ -205,21 +239,7 @@ export default function Player() {
           {playing ? 'Pause' : 'Play'}
         </button>
 
-        <input
-          type="range"
-          min={0}
-          max={Math.max(duration, 0.1)}
-          step={0.01}
-          value={Math.min(playheadSec, duration)}
-          aria-label="Playhead"
-          onChange={(e) => {
-            setPlaying(false)
-            seek(Number(e.target.value))
-          }}
-          className="min-w-0 flex-1 accent-orange-600"
-        />
-
-        <p className="shrink-0 text-[12px] tabular-nums text-slate-600 dark:text-slate-300" data-testid="clock">
+        <p className="ml-auto shrink-0 text-[12px] tabular-nums text-slate-600 dark:text-slate-300" data-testid="clock">
           <span className="font-semibold text-slate-900 dark:text-slate-100">{timecode(playheadSec)}</span>
           {' / '}
           {timecode(duration)}

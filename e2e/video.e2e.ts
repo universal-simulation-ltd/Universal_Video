@@ -336,15 +336,21 @@ test.describe('Universal Video', () => {
     // order and not as a set of things that merely exist.
     const example = (await page.getByRole('button', { name: /Try with an example video/ }).boundingBox())!
     const compress = (await page.getByRole('button', { name: /1 Click Compress/ }).boundingBox())!
-    const more = (await page.getByText('More options').boundingBox())!
+    const more = (await page.getByText('More options', { exact: true }).boundingBox())!
     expect(example.y).toBeGreaterThan(ringBox.y + ringBox.height)
     expect(compress.y).toBeGreaterThan(example.y)
     expect(more.y).toBeGreaterThan(compress.y)
 
+    // ⚠️ `exact`. The SDK's changelog panel is on this page and its entries are
+    // fetched live, so the moment a release note mentions a control by name —
+    // and 2026.08.24.18 mentions this one — a substring locator matches the
+    // note as well as the button. It passed in isolation and failed in the
+    // suite, which is the shape of that bug.
+    //
     // More options is CLOSED until asked. Everything in it is a second way to
     // do what the circle already does, so it must not compete with the circle.
     await expect(page.getByRole('button', { name: /^Convert —/ })).toBeHidden()
-    await page.getByText('More options').click()
+    await page.getByText('More options', { exact: true }).click()
     await expect(page.getByRole('button', { name: /^Convert —/ })).toBeVisible()
     await expect(page.getByRole('button', { name: /^Join videos —/ })).toBeVisible()
 
@@ -460,7 +466,7 @@ test.describe('Universal Video', () => {
 
   test('Convert opens the file with the export panel announcing itself', async ({ page }) => {
     await page.goto('/')
-    await page.getByText('More options').click()
+    await page.getByText('More options', { exact: true }).click()
 
     const [chooser] = await Promise.all([
       page.waitForEvent('filechooser'),
@@ -588,22 +594,27 @@ test.describe('Universal Video', () => {
     await expect(page.locator('[data-testid=clip]')).toHaveCount(1)
   })
 
-  test('the timeline is exactly as wide as the picture, and the needle lines up with it', async ({ page }) => {
-    // The owner's ask, mechanised: "match the timeline to the width of the video
-    // so the player needle matches the same position in the video". At fit that
-    // is not an approximation — the movie IS the width, so the needle at t is at
-    // t/duration of it, and it can be asserted in pixels rather than eyeballed.
+  test('the timeline lines up with the scrub bar, and the needle with the knob', async ({ page }) => {
+    // The owner's ask, twice. First time (2026-08-13): "match the timeline to
+    // the width of the video so the player needle matches the same position in
+    // the video" — answered by matching the timeline to the PICTURE, which is
+    // not a time axis, so the scrub bar kept its own wider ruler and the two
+    // needles still disagreed. Asked again on 2026-08-25 with a screenshot of
+    // the gap. The two things that measure TIME are the scrub and the timeline,
+    // and they are the two that have to agree.
     await page.goto('/')
     await drop(page, 'clip.mp4', FIXTURE_BYTES)
     await expect(page.locator('[data-testid=clip]')).toHaveCount(1)
 
-    const canvas = (await page.locator('[data-testid=preview]').boundingBox())!
+    const scrub = (await page.locator('[data-testid=scrub]').boundingBox())!
     const surface = (await page.locator('[data-testid=timeline-surface]').boundingBox())!
 
-    // Same width, and the same x on screen: the needle is under the picture,
-    // not merely proportional to something the same shape.
-    expect(Math.abs(surface.width - canvas.width)).toBeLessThan(1)
-    expect(Math.abs(surface.x - canvas.x)).toBeLessThan(1)
+    // Same width and the same x on screen — not merely proportional. This is a
+    // structural claim: both are the content box of their card, so it holds at
+    // every width and for every duration, and the assertion is the guard on
+    // anything being put back on the scrub's row.
+    expect(Math.abs(surface.width - scrub.width)).toBeLessThan(1)
+    expect(Math.abs(surface.x - scrub.x)).toBeLessThan(1)
 
     const duration = await page.evaluate(
       () => Number(document.querySelector('[data-testid=clip]')!.getAttribute('data-end')),
@@ -623,10 +634,16 @@ test.describe('Universal Video', () => {
     for (const t of [0, 0.5, 1, 1.5, duration]) {
       await page.getByLabel('Playhead').fill(String(t))
       const needle = (await page.locator('[data-testid=playhead]').boundingBox())!
-      // Where the picture would have to be scrubbed to, in page pixels.
-      const expected = canvas.x + (t / duration) * canvas.width
+      // Where the scrub would have to be dragged to, in page pixels.
+      const expected = scrub.x + (t / duration) * scrub.width
       expect(Math.abs(needle.x - expected)).toBeLessThan(1)
     }
+
+    // The picture is still capped and centred, and is now allowed to be
+    // narrower than both — it is a picture, not a ruler. An upright frame is
+    // the case that used to drag the timeline down to 304px with it.
+    const canvas = (await page.locator('[data-testid=preview]').boundingBox())!
+    expect(canvas.width).toBeLessThanOrEqual(surface.width + 1)
   })
 
   test('zoom makes the timeline wider without losing the playhead', async ({ page }) => {
@@ -871,15 +888,22 @@ test.describe('Universal Video', () => {
     // The owner's ask: *"if a portrait video then have a max height in the
     // viewer so it doesn't take over the screen"*. 9:16 at the full 720 px wide
     // is ~1280 px tall — the transport, the toolbar and the whole timeline end
-    // up below the fold. `PLAYER_MAX_H` caps it, and the timeline narrows WITH
-    // the picture: a needle placed as a fraction of a wider box would sit
-    // outside the frame it names.
+    // up below the fold. `PLAYER_MAX_H` caps it.
     const upright = (await page.locator('[data-testid=preview]').boundingBox())!
     expect(upright.height).toBeLessThanOrEqual(541)
     expect(upright.width).toBeLessThan(720)
+
+    // ⚠️ The timeline does NOT narrow with it any more (2026-08-25). It used
+    // to, on the argument that a needle placed as a fraction of a wider box
+    // would sit outside the frame it names — but the frame is not a time axis,
+    // and the cost was editing a phone clip in a 304px timeline underneath a
+    // full-width scrub bar. The timeline stays with the SCRUB, which is what
+    // the needle is actually being compared against.
     const uprightSurface = (await page.locator('[data-testid=timeline-surface]').boundingBox())!
-    expect(Math.abs(uprightSurface.width - upright.width)).toBeLessThan(1)
-    expect(Math.abs(uprightSurface.x - upright.x)).toBeLessThan(1)
+    const uprightScrub = (await page.locator('[data-testid=scrub]').boundingBox())!
+    expect(uprightSurface.width).toBeGreaterThan(upright.width)
+    expect(Math.abs(uprightSurface.width - uprightScrub.width)).toBeLessThan(1)
+    expect(Math.abs(uprightSurface.x - uprightScrub.x)).toBeLessThan(1)
 
     await page.getByLabel('Output frame').selectOption('landscape')
 
@@ -889,13 +913,16 @@ test.describe('Universal Video', () => {
     await expect(button).toContainText('1920×1080')
     await expect(button).toBeEnabled()
 
-    // ── The timeline still lines up with the picture ───────────────────────
-    // The frame just changed shape, and the timeline is laid out to the
-    // player's frame. The needle has to still be under the frame it names.
-    const canvas = (await page.locator('[data-testid=preview]').boundingBox())!
+    // ── The timeline still lines up with the scrub ─────────────────────────
+    // The frame just changed shape — from 270×480 to 1920×1080 — and the
+    // picture with it. Neither the scrub nor the timeline should have moved a
+    // pixel, which is the point of taking them off the picture's box: a change
+    // of output frame is not a change of ruler.
+    const scrub = (await page.locator('[data-testid=scrub]').boundingBox())!
     const surface = (await page.locator('[data-testid=timeline-surface]').boundingBox())!
-    expect(Math.abs(surface.width - canvas.width)).toBeLessThan(1)
-    expect(Math.abs(surface.x - canvas.x)).toBeLessThan(1)
+    expect(Math.abs(surface.width - scrub.width)).toBeLessThan(1)
+    expect(Math.abs(surface.x - scrub.x)).toBeLessThan(1)
+    expect(Math.abs(surface.width - uprightSurface.width)).toBeLessThan(1)
     await expect(page.locator('[data-testid=zoom-level]')).toHaveText('Fit')
     const duration = await page.evaluate(
       () => Number(document.querySelector('[data-testid=clip]')!.getAttribute('data-end')),
@@ -903,7 +930,7 @@ test.describe('Universal Video', () => {
     for (const t of [0, 1, duration]) {
       await page.getByLabel('Playhead').fill(String(t))
       const needle = (await page.locator('[data-testid=playhead]').boundingBox())!
-      expect(Math.abs(needle.x - (canvas.x + (t / duration) * canvas.width))).toBeLessThan(1)
+      expect(Math.abs(needle.x - (scrub.x + (t / duration) * scrub.width))).toBeLessThan(1)
     }
 
     // ── The PREVIEW letterboxes, before anything is encoded ────────────────

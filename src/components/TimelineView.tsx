@@ -12,7 +12,7 @@ import { clipDuration, clipSpan, timelineDuration, type Clip } from '@unisim/med
 import { sourceById, trackCount } from '../lib/edit'
 import { timecode } from '../lib/timecode'
 import { contentWidthFor } from '../lib/zoom'
-import { selectPictureWidth, selectPxPerSec, useEditorStore } from '../stores/editorStore'
+import { selectPxPerSec, useEditorStore } from '../stores/editorStore'
 
 /**
  * The timeline: a ruler, and every clip drawn as a video lane and an audio lane
@@ -29,26 +29,24 @@ import { selectPictureWidth, selectPxPerSec, useEditorStore } from '../stores/ed
  * `track: 0` and matching every other editor: what is higher covers what is
  * lower.
  *
- * The whole thing is drawn to the PLAYER's width, not to some fixed pixels per
- * second: the scroll viewport below is the same box the picture is drawn in
- * (`selectPictureWidth`, centred, same padding), it is measured rather than
- * assumed, and `lib/zoom.ts` turns that width into pixels per second. At fit the
- * movie spans it exactly, so the needle at `t` sits at `t / duration` of the
- * width — under the frame the player is showing.
+ * The whole thing is drawn to the PLAYER'S SCRUB BAR's width, not to some fixed
+ * pixels per second: the scroll viewport below is the content box of this card,
+ * which is the content box of the player's card, which is exactly what the
+ * scrub bar spans now that it has a row to itself. It is measured rather than
+ * assumed, and `lib/zoom.ts` turns that width into pixels per second. At fit
+ * the movie spans it exactly, so the needle at `t` sits at `t / duration` of
+ * the width — the same place the scrub knob is for the same `t`.
  *
- * That width is not a constant: an upright output frame is capped in height and
- * therefore narrower than 720 (see `lib/layout.ts`), and this box follows it
- * down. Measuring rather than assuming is what makes that free — the viewport
- * is observed, so `pxPerSec` re-derives itself when the frame preset changes
- * the shape of the movie.
+ * ⚠️ **It used to be the PICTURE's box** (`selectPictureWidth`, capped at 720,
+ * centred, narrower still for an upright frame), which was an earlier answer to
+ * the same complaint — "the player needle should match the same position in the
+ * video" — and it aligned the timeline with the one part of the player that is
+ * NOT a time axis. The scrub bar kept its own, wider ruler, so the knob and the
+ * needle still disagreed, and a 9:16 clip was edited in a 304px timeline under
+ * a full-width scrub. Owner asked again, with a picture, on 2026-08-25.
  *
- * ⚠️ It is the player's PICTURE FRAME we match, not the visible rectangle of
- * whatever source happens to be on screen. The canvas is the output frame and
- * the exported movie is exactly that shape; a source with a different aspect is
- * letterboxed INSIDE it (`fitInside()`, same as the renderer), and the black is
- * part of the picture — a `fade` fades to it. Matching the letterboxed source
- * rectangle instead would make the timeline change width from clip to clip,
- * which is not a thing "the width of the video" can sensibly mean.
+ * The picture is still capped and centred — that is `lib/layout.ts`, and it is
+ * about the picture. Nothing about the timeline is derived from it any more.
  */
 
 const TRACK_H = 62
@@ -65,8 +63,6 @@ export default function TimelineView() {
   const setPlaying = useEditorStore((s) => s.setPlaying)
   const surfaceRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<HTMLDivElement>(null)
-  // The player's box, to the pixel — not a constant of our own.
-  const boxWidth = useEditorStore(selectPictureWidth)
 
   const duration = timelineDuration(timeline)
   // One empty track above the highest in use, so "drag it up to a new track" is
@@ -123,9 +119,19 @@ export default function TimelineView() {
       aria-label="Timeline"
       className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900"
     >
-      {/* The same box as the player's picture, so x means the same thing in
-          both. Scrolling lives here, on the box, not on the section. */}
-      <div ref={viewRef} className="mx-auto w-full overflow-x-auto" style={{ maxWidth: boxWidth }}>
+      {/* ⚠️ The full content width of the card, which is exactly what the
+          player's scrub bar is — the two are the same movie and have to be
+          measured against the same ruler, or the knob at half way and the
+          needle at half way are in different places.
+
+          It used to be the PICTURE's box instead (capped at 720, narrower for
+          an upright frame, centred), which answered an older version of the
+          same ask by aligning the timeline with the thing that is not a time
+          axis. A 9:16 clip got a 304px timeline to edit in while the scrub
+          above it was the full width of the window.
+
+          Scrolling lives here, on the box, not on the section. */}
+      <div ref={viewRef} className="w-full overflow-x-auto">
         <div
           ref={surfaceRef}
           data-testid="timeline-surface"

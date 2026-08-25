@@ -1165,3 +1165,55 @@ a `_redirects` line, and the e2e suite cannot catch it** — the dev server serv
 The only checks that would have caught it are a live `curl` of the URL after the
 deploy, and the content-type guard now in `loadExample`, which turns a repeat
 into a sentence about the site rather than an accusation against the file.
+
+## 16. The scrub bar and the timeline finally use the same ruler — 2026-08-25
+
+Owner, with a screenshot and two lines drawn down it: *"Match the actions
+timeline to the video timeline."* The lines were at the ends of the **scrub
+bar**, carried down through the toolbar to the clip lane.
+
+⚠️ **This is the same complaint as §12's, and §12 answered it in the wrong
+place.** That ask was *"match the timeline to the width of the video so the
+player needle matches the same position in the video"*, and it was implemented
+by making the timeline the width of the **picture** — `selectPictureWidth`,
+capped, centred, narrower still for an upright frame. But the picture is not a
+time axis: x across it is not a time. The thing that IS one, the scrub bar, kept
+its own wider ruler, so the knob at half way and the needle at half way stayed
+~120px apart at 1440 and further at every other width. A year of comments in
+`lib/layout.ts` defended a relationship that never fixed what was asked.
+
+**The fix is structural, not arithmetic.** The scrub bar was `flex-1` on a row
+between the Play button and the clock, so its axis started after one and stopped
+before the other. It now has **a row to itself**, which makes it exactly the
+content box of its card — and the timeline's viewport is exactly the content box
+of its card, and the two cards are siblings with the same padding. They agree at
+every breakpoint, for every duration, with nothing to keep in step.
+
+⚠️ **Do not put anything back on the scrub's row.** A button either side is all
+it takes to make them disagree again, and it will look fine until someone
+compares the two needles.
+
+Measured after the change, at 1440 wide: scrub `x=125 w=1190`, timeline
+`x=125 w=1190` — landscape *and* portrait. The picture is `w=720` and `w=304`
+respectively, centred, and no longer drags anything with it.
+
+**Two things this also fixed, which were never reported:**
+
+- A 9:16 clip used to be edited in a **304px** timeline underneath a full-width
+  scrub. The timeline is now the full width whatever shape the movie is.
+- Changing the output frame preset used to change the timeline's width, so the
+  ruler moved under you mid-edit. A change of output frame is not a change of
+  ruler.
+
+**The residual, and why it is left:** a native range's thumb CENTRE travels from
+half a thumb in to half a thumb short of the end, so `t=0` and `t=duration` sit
+~8px inside the needle's own `0…width`. Everything between is exact. Closing
+those 8px means `appearance-none` and hand-drawing the track and thumb in both
+engines — a lot of CSS for half a thumb.
+
+⚠️ **A test locator died to a changelog entry.** `getByText('More options')`
+started matching two elements the moment release `2026.08.24.18` went live,
+because the note describes that control by name and the SDK's changelog panel
+fetches it into the page. It passed in isolation and failed in the suite. All
+three uses are `{ exact: true }` now — **and any future locator that matches on
+words the changelog might also use needs the same.**

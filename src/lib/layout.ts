@@ -1,13 +1,21 @@
 /**
- * The one measurement the player and the timeline have to agree on.
+ * How wide the PICTURE is allowed to be drawn.
  *
- * The picture is capped and centred rather than stretched to the browser window
- * — a 4K monitor showing a 480p clip at 2000 px wide is not a better preview.
- * The timeline's scroll viewport is laid out from the SAME box, in the same way,
- * so at fit-to-width the two are the same width and start at the same x: the
- * needle under the picture is under the point of the picture it names.
+ * Capped and centred rather than stretched to the browser window — a 4K monitor
+ * showing a 480p clip at 2000 px wide is not a better preview.
  *
- * If this ever moves, move it once, here.
+ * ⚠️ **The timeline is no longer laid out from this box** (2026-08-25). It was,
+ * and the reasoning is worth keeping because it was wrong in an instructive
+ * way: the owner asked for "the player needle to match the same position in the
+ * video", and this file answered by making the timeline the width of the
+ * PICTURE. But the picture is not a time axis — x across it is not a time — and
+ * the thing that IS one, the scrub bar, kept its own wider ruler. So the knob
+ * and the needle still disagreed, which is what got asked about again.
+ *
+ * The timeline now matches the scrub bar: both are the full content width of
+ * their cards, which is a fact of the layout rather than an arithmetic
+ * relationship anyone has to maintain. This constant still bounds the picture,
+ * and only the picture.
  */
 export const PLAYER_MAX_W = 720
 
@@ -19,13 +27,11 @@ export const PLAYER_MAX_W = 720
  * picture is bounded in BOTH directions — 720 across, {@link PLAYER_MAX_H}
  * down — and whichever bound bites first decides the box.
  *
- * ⚠️ Capping the height NARROWS THE BOX, and the timeline has to narrow with
- * it. The needle is placed at `t / duration` of the timeline's width and is
- * only under the frame it names while that width equals the picture's; leave
- * the timeline at 720 while the picture shrinks to 304 and every needle
- * position becomes a lie. That is why this is a function both of them call,
- * rather than a constant one of them applies. `e2e/video.e2e.ts` asserts the
- * two boxes match, in pixels, for a portrait source — that spec is the check.
+ * ⚠️ Capping the height NARROWS THE BOX — and the timeline used to narrow with
+ * it, which is how a 9:16 clip ended up being edited in a 304px timeline
+ * underneath a full-width scrub bar. It does not any more; see the note above
+ * `PLAYER_MAX_W`. What the spec checks now is that the timeline lines up with
+ * the SCRUB, which is the other thing that measures time.
  *
  * 540 is not a round number picked for looking nice: it is 720 × 3/4, so the
  * cap starts biting at exactly 4:3 and **every landscape frame is left alone**.
