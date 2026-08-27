@@ -38,7 +38,7 @@ import {
 } from '@unisim/media'
 import { evenEdge, outputFrame } from './frame'
 import { segmentsOf, separateBlocked } from './segments'
-import { createZip } from './zip'
+import { createZip } from '@unisim/media'
 
 /**
  * Everything the renderer needs that the `Timeline` itself does not carry.
