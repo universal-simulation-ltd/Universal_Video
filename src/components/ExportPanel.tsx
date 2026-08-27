@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { formatBytes, formatDuration, timelineDuration, type MaxHeight, type VideoQuality } from '@unisim/media'
+import { formatBytes, formatDuration, type MaxHeight, type VideoQuality } from '@unisim/media'
 import {
   FRAME_PRESETS,
   MAX_FRAME_EDGE,
@@ -8,7 +8,14 @@ import {
   describeFrame,
   naturalFrame,
 } from '../lib/frame'
-import { selectFrameHeight, selectFrameWidth, selectRoute, useEditorStore } from '../stores/editorStore'
+import {
+  selectFrameHeight,
+  selectFrameWidth,
+  selectRoute,
+  selectSegmentCount,
+  selectSeparateBlock,
+  useEditorStore,
+} from '../stores/editorStore'
 
 const HEIGHTS: { value: MaxHeight; label: string }[] = [
   { value: 'source', label: 'Keep original size' },
@@ -54,7 +61,10 @@ export default function ExportPanel() {
   const route = useEditorStore(selectRoute)
   const clips = useEditorStore((s) => s.timeline.clips.length)
   const sourceBytes = useEditorStore((s) => s.plan?.sourceBytes ?? 0)
-  const duration = useEditorStore((s) => timelineDuration(s.timeline))
+  const mode = useEditorStore((s) => s.mode)
+  const setMode = useEditorStore((s) => s.setMode)
+  const separateBlock = useEditorStore(selectSeparateBlock)
+  const pieceCount = useEditorStore(selectSegmentCount)
   const frame = useEditorStore((s) => s.frame)
   const setFramePreset = useEditorStore((s) => s.setFramePreset)
   const setCustomFrame = useEditorStore((s) => s.setCustomFrame)
@@ -100,8 +110,11 @@ export default function ExportPanel() {
   const quality = QUALITIES.find((q) => q.value === settings.quality)
   const refused = plan.verdict === 'refuse'
   const stopped = refused || supported === false || busy
-  // "% smaller" only means something when there is one source to compare with.
-  const saving = route === 'compress' && sourceBytes > 0 ? 1 - plan.estimate.bytes / sourceBytes : 0
+  // "% smaller" only means something when there is one source to compare with —
+  // and one file to compare it against. A zip of five pieces is not "38% of the
+  // original" in any sense a reader would take the right meaning from.
+  const saving =
+    mode === 'one' && route === 'compress' && sourceBytes > 0 ? 1 - plan.estimate.bytes / sourceBytes : 0
 
   return (
     <div className="space-y-3" ref={panelRef}>
@@ -112,6 +125,47 @@ export default function ExportPanel() {
             : 'border-slate-200 dark:border-slate-800'
         }`}
       >
+        {/* ── WHAT COMES OUT ──────────────────────────────────────────────────
+            First, because it changes what every control under it applies to and
+            what the button at the bottom means.
+
+            This is the ENTIRE "export each cut separately" feature's UI. There
+            is deliberately no split-point editor, no segment list and no second
+            screen: the cuts are already on the timeline, and the timeline is
+            already the list of pieces. All that was missing was somewhere to
+            say "don't join them back up". Everything below this line — frame,
+            quality, resolution, sound — is unchanged and applies to every
+            piece, which is what keeps a five-file export as simple to set up as
+            a one-file one. */}
+        <Field label="What comes out">
+          <div className="grid grid-cols-2 gap-1.5">
+            <ModeButton
+              selected={mode === 'one'}
+              disabled={busy}
+              onClick={() => setMode('one')}
+              label="One video"
+            />
+            <ModeButton
+              selected={mode === 'separate'}
+              // Not offered until the timeline is a plain row of cuts. The
+              // reason is right underneath — a control that greys out without
+              // saying why is indistinguishable from a broken one.
+              disabled={busy || separateBlock !== null}
+              onClick={() => setMode('separate')}
+              label={separateBlock ? 'Separate files' : `Separate files — ${pieceCount}`}
+            />
+          </div>
+          <p className="text-[11.5px] leading-relaxed text-slate-500 dark:text-slate-400">
+            {mode === 'separate'
+              ? `Every cut becomes its own MP4 — ${pieceCount} of them — and they come down together as one .zip.`
+              : separateBlock
+                ? separateBlock
+                : `The ${clips} clips are joined into a single MP4.`}
+          </p>
+        </Field>
+
+        <hr className="border-slate-100 dark:border-slate-800" />
+
         {/* The shape of the MOVIE, so it belongs with the output settings and
             not in the clip inspector — a frame is not a property of a clip. */}
         <Field label="Output frame">
@@ -281,24 +335,30 @@ export default function ExportPanel() {
       <button
         type="button"
         onClick={() => void exportEdit()}
-        disabled={stopped}
+        disabled={stopped || (mode === 'separate' && separateBlock !== null)}
         className="w-full rounded-2xl bg-orange-700 px-5 py-4 text-left text-white transition-colors hover:bg-orange-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
       >
         <span className="block text-[15px] font-semibold">
           {refused || supported === false
             ? 'Can’t export this here'
-            : route === 'compress'
-              ? 'Export this video'
-              // One clip can reach this now: a reframe is a letterbox, and only
-              // the renderer can letterbox, so "1 clips" became reachable the
-              // moment the frame control shipped.
-              : `Export this edit — ${clips} clip${clips === 1 ? '' : 's'}`}
+            : mode === 'separate'
+              ? `Export ${pieceCount} separate videos (.zip)`
+              : route === 'compress'
+                ? 'Export this video'
+                // One clip can reach this now: a reframe is a letterbox, and only
+                // the renderer can letterbox, so "1 clips" became reachable the
+                // moment the frame control shipped.
+                : `Export this edit — ${clips} clip${clips === 1 ? '' : 's'}`}
         </span>
         <span className="mt-0.5 block text-[12px] tabular-nums opacity-90">
           {/* The estimate lives ON the button, because a number the user has to
               go and find is a number they press past. */}
+          {/* The DURATION comes off the plan, not off the timeline. In separate
+              files a gap left by a deleted clip is not exported at all, while a
+              joined movie writes it as black — so the two modes really are
+              different lengths, and the plan is the one place that knows. */}
           About {formatBytes(plan.estimate.bytes)} · {plan.estimate.width}×{plan.estimate.height} ·{' '}
-          {formatDuration(duration)}
+          {formatDuration(plan.estimate.seconds)}
           {!stopped && saving > 0.02 && ` · ${Math.round(saving * 100)}% smaller`}
           {!stopped && saving < -0.02 && ` · ${Math.round(-saving * 100)}% BIGGER than the original`}
         </span>
@@ -367,6 +427,35 @@ function EvenSizeField({
       }}
       className="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[12px] tabular-nums text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
     />
+  )
+}
+
+/** One of the two "what comes out" pills. */
+function ModeButton({
+  selected,
+  disabled,
+  onClick,
+  label,
+}: {
+  selected: boolean
+  disabled: boolean
+  onClick: () => void
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      aria-pressed={selected}
+      onClick={onClick}
+      className={`rounded-lg px-3 py-2 text-[13px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+        selected
+          ? 'bg-orange-700 text-white'
+          : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
+      }`}
+    >
+      {label}
+    </button>
   )
 }
 

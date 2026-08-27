@@ -48,3 +48,38 @@ export const OVERRUN_FACTOR = 1.35
 export function isOverrunning(projected: number | null, predicted: number): boolean {
   return projected !== null && predicted > 0 && projected > predicted * OVERRUN_FACTOR
 }
+
+/**
+ * Where a BATCH of exports has got to, when the timeline is being written out
+ * as separate files.
+ *
+ * ⚠️ **The encoder has never heard of a batch.** It reports frames done against
+ * frames total for the one piece it is writing, so plumbing that straight to
+ * the bar makes it fill up and snap back to zero once per piece — which reads
+ * as a crash-and-restart, not as progress. This converts the encoder's
+ * per-piece report into one monotonic run across the whole job.
+ *
+ * The weights are the PREDICTED frame counts (duration × fps), not the
+ * encoder's own, so `framesTotal` is a constant for the whole run rather than a
+ * number that jumps each time a piece starts and reveals its real length. The
+ * live piece still contributes its true fraction — the prediction only decides
+ * how much of the bar that piece is worth.
+ *
+ * With one piece and its own frame count as the weight, this returns exactly
+ * what the encoder said, which is why the joined export can go through the same
+ * code path rather than having a second one.
+ */
+export function batchProgress(
+  finishedFrames: number,
+  current: { framesDone: number; framesTotal: number },
+  currentWeight: number,
+  remainingFrames: number,
+): { framesDone: number; framesTotal: number } {
+  const weight = currentWeight > 0 ? currentWeight : current.framesTotal
+  const within =
+    current.framesTotal > 0 ? Math.min(1, Math.max(0, current.framesDone / current.framesTotal)) : 0
+  return {
+    framesDone: Math.round(finishedFrames + weight * within),
+    framesTotal: Math.round(finishedFrames + weight + remainingFrames),
+  }
+}

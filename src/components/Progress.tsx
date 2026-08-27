@@ -19,6 +19,7 @@ export default function Progress() {
   if (!progress) return null
 
   const pct = Math.round(progress.fraction * 100)
+  const batch = progress.piece.total > 1
   const predicted = plan?.estimate.bytes ?? 0
   const projected = projectedBytes(progress.bytesOut, progress.framesDone, progress.framesTotal)
   const overrunning = isOverrunning(projected, predicted)
@@ -26,7 +27,14 @@ export default function Progress() {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
       <div className="flex items-baseline justify-between gap-4">
-        <p className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">Writing the file…</p>
+        {/* The bar spans the WHOLE batch (see `batchProgress`), so this line
+            carries the only thing it cannot show: which piece is under the
+            encoder right now. Without it a five-piece export is a bar that
+            crawls for four minutes with nothing to say it is working through a
+            list. */}
+        <p className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">
+          {batch ? `Writing piece ${progress.piece.index} of ${progress.piece.total}…` : 'Writing the file…'}
+        </p>
         <p className="text-[12px] tabular-nums text-slate-500 dark:text-slate-400">
           {progress.secondsLeft === null
             ? 'measuring this device…'
@@ -41,9 +49,15 @@ export default function Progress() {
         />
       </div>
 
+      {batch && (
+        <p className="mt-2 truncate text-[11.5px] text-slate-500 dark:text-slate-400" title={progress.piece.name}>
+          {progress.piece.name}
+        </p>
+      )}
+
       <p className="mt-3 text-[11.5px] tabular-nums text-slate-500 dark:text-slate-400">
         {progress.framesDone.toLocaleString('en-GB')} of{' '}
-        {progress.framesTotal.toLocaleString('en-GB')} frames · {formatBytes(progress.bytesOut)} written
+        {progress.framesTotal.toLocaleString('en-GB')} frames · {formatBytes(progress.bytesOut)} written{batch && ' in all'}
         {predicted > 0 && ` · predicted ${formatBytes(predicted)}`}
       </p>
 

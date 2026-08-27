@@ -3,7 +3,8 @@
 **Clip, cut and resize a video without uploading it.** Drop an MP4, M4V or MOV
 and it is opened right here, in the tab, by your own browser — with a player and
 a timeline. Trim it, cut it, stack clips, choose the size and shape it comes out
-at, and save it back. It will compress a video without uploading it too, which is
+at, and save it back — as one movie, or with every cut written out as its own
+file in a zip. It will compress a video without uploading it too, which is
 the phrase this app was founded on; it is simply no longer the whole of what it
 is for. **No upload, no account, no size cap, no watermark, no queue** — and no
 server ever sees a frame of it.
@@ -55,6 +56,7 @@ drag and one click. What has **not** changed is everything below.
 | **Read MKV, WebM, AVI or WMV** | ❌ No. MKV and WebM need a Matroska/EBML reader (a real piece of work, and the top of the backlog). AVI and WMV are refused **permanently** — the browser cannot decode MPEG-4 ASP or WMV3, so a reader would buy a different error message, not a working conversion. |
 | **Read fragmented MP4** | ❌ Not yet. Common from screen recorders and some phone apps, so the refusal fires more often than its rarity suggests. It is detected on drop and named, not parsed half-way. |
 | **Write WebM / VP9** | ❌ Not yet — and this is the highest-value gap, because it is also what would make **Firefox** a supported browser. WebCodecs already has the VP9 encoder; only the container is missing. |
+| **Split into separate files** | ✅ Every cut on the timeline can come out as its own MP4, delivered as one `.zip` — see [Separate files](#separate-files-one-timeline-n-mp4s) below. One pill in the export panel; no split-point editor, because the cuts already on the timeline **are** the pieces. Refused (with the reason, and the fix) on a timeline that isn't a plain row of cuts: a stacked clip or a crossfade belongs to two pieces at once. |
 | **Edit** | ✅ Trim, cut at the playhead, delete, slide clips along and between tracks, stack them (two clips slid over each other add a track rather than overwriting), intro/outro cards from an image or a video, and crossfade / fade-to-black between clips. **A clip carries its own audio**, so a cut splits picture and sound at the same instant by construction — see [`timeline.ts`](https://github.com/universal-simulation-ltd/universal-platform/blob/main/packages/media/src/timeline.ts), the contract this editor and the renderer share. |
 | **Reframe** | ✅ The output frame is chosen, not inherited: match the source (the default), 1920×1080, 1080×1920, 1080×1080, or a size you type. A source of a different shape is **centred and the rest filled black** — *contain*, never *cover*, so nothing is ever cropped away. Both edges are forced even (H.264 codes in 16×16 macroblocks and the renderer refuses an odd one up front). The preview canvas is the output frame and letterboxes through the same `fitInside()` maths, so what you see while editing is what comes out. An **upright** frame is capped at 540 px tall in the viewer (`src/lib/layout.ts`) instead of drawing ~1280 px and pushing the timeline off the screen — and the timeline narrows with it, because the needle is placed as a fraction of that width. |
 | **Crop, zoom-to-fill, per-clip position** | ❌ No. Reframing is letterbox/pillarbox only. A fill mode would silently throw away picture that is visible in the preview; black bars are visible and fixable, a missing head is neither. |
@@ -62,6 +64,73 @@ drag and one click. What has **not** changed is everything below.
 | **Record** | ❌ That is **[Universal Recorder](https://opensource.unisim.co.uk/recorder)**. Adjacent products should not grow into each other. |
 | **Fall back to a server for big files** | ⛔ **Never.** One *"we'll process the big ones on our server"* button would make every other sentence on the page false, and it would be discovered in five seconds by anyone with devtools open. If a hosted path ever exists it is a separate, explicitly-labelled product. |
 | **Run in Firefox** | ❌ Firefox has no WebCodecs H.264 **encoder**. It is probed on arrival and said plainly, rather than failing after a long wait. **Tested on Chrome and Edge.** Safari 16.4+ ships WebCodecs and ought to work, but it has never been run there — an untested browser is not a supported one, so it is not claimed as one. |
+
+## Separate files: one timeline, N MP4s
+
+The client ask this was built for: *"cut a video at multiple points and export
+each piece separately, as a zip."*
+
+**Almost none of it was new work, and the design is why.** `cutAt()` already
+turned one clip into several and the timeline already drew them, so "multiple
+cut points" needed no marking UI at all — pressing **Cut at playhead** a few
+times is the feature's input. What was missing was one sentence of intent on the
+way out: *don't join these back together.* So the whole of it in the UI is two
+pills at the top of the export panel:
+
+```
+  WHAT COMES OUT
+  [ One video ]  [ Separate files — 5 ]
+```
+
+Everything below that line — frame, quality, resolution, sound — is unchanged
+and applies to **every** piece. There is no per-file setup, no segment list and
+no second screen.
+
+Three things are worth knowing about how it works:
+
+**Each piece is a one-clip `Timeline` starting at zero**
+([`lib/segments.ts`](src/lib/segments.ts)), and that is not a convenience. Read
+`exportRoute()` in
+[`lib/render.ts`](src/lib/render.ts): every one of its five conditions is then
+satisfied, so each piece takes the **`compress` route** — `convertVideo()` with
+a trim, the path this app has shipped and been proven on since v1. N pieces
+reuse the oldest code in the product instead of introducing a second way to be
+wrong. The normalisation to zero is what earns that: `startSec` means "where the
+black stops", so a piece exported at its timeline position would carry a minute
+and a half of black at the head.
+
+**The mode is refused, not guessed at, when the timeline isn't a plain row of
+cuts.** Separate files means "this instant belongs to exactly one piece", and a
+stacked or dissolving timeline has instants belonging to two — there is no
+honest answer to *which file does the crossfade go in?* So the pill greys out
+and names the fix, the same way the memory refusal does.
+
+**A zip does not lower the ceiling, and it was tempting to assume it does.**
+Only one piece is in the encoder at a time, so the biggest single output is
+small — but `createZip()` copies every finished piece into a new blob, so the
+moment the zip is built the tab holds all of them twice. That is
+`sources + 2 × Σ pieces`: the same shape as the joined export.
+`peakBytesForTimeline()` in [`lib/memory.ts`](src/lib/memory.ts) writes the
+arithmetic out in full, because a formula that was optimistic here would
+defeat the one defence there is against tab death.
+
+What *does* change with the mode is the predicted length. A gap left by a
+deleted clip is written as black in a joined movie and simply isn't a piece in a
+zip, so the same timeline honestly predicts two different sizes — which is why
+the plan is computed per mode and the button reads its number from the plan.
+
+Naming is `01_holiday_00-01-32.mp4`: index first so an unzipped folder sorts
+back into timeline order (zero-padded to the width of the count, or ten pieces
+sort `10` before `2`), then the source's stem, then the piece's in-point **in
+its own source** — which answers the question a file name gets asked, *where in
+the original did this come from?*
+
+> The zip writer itself ([`lib/zip.ts`](src/lib/zip.ts)) is a dependency-free
+> STORED archiver — an MP4 does not deflate — and is the **fourth verbatim copy**
+> in the suite, after Converter, Compress and PDF. It belongs in `@unisim/media`;
+> there is a backlog item saying so. None of the other three had a test, so
+> [`zip.test.ts`](src/lib/zip.test.ts) is the first: it walks the archive the way
+> an unzipper does and pulls the entries back out.
 
 ## The ceiling, and why it is the *output* that binds
 

@@ -15,6 +15,7 @@ import {
   type VideoSettings,
 } from '@unisim/media'
 import {
+  DEFAULT_FPS,
   DEFAULT_IMAGE_SEC,
   DEFAULT_TRANSITION_SEC,
   addSource,
@@ -45,8 +46,9 @@ import {
 import { pictureWidth } from '../lib/layout'
 import { planTimelineExport, type TimelinePlan } from '../lib/memory'
 import { FALLBACK_VIEWPORT_PX, FIT, clampZoom, maxZoomFor, pxPerSecFor } from '../lib/zoom'
-import { exportRoute, exportTimeline } from '../lib/render'
-import { secondsRemaining } from '../lib/eta'
+import { exportRoute, exportSegments, exportTimeline, zipPieces } from '../lib/render'
+import { segmentsOf, separateBlocked, zipName, type ExportMode } from '../lib/segments'
+import { batchProgress, secondsRemaining } from '../lib/eta'
 import { deleteRecent, getRecent, listRecents, saveRecent, type RecentMeta } from '../lib/recents'
 
 /**
@@ -78,6 +80,17 @@ export interface SourceAsset {
 export interface RunProgress extends VideoProgress {
   startedAt: number
   secondsLeft: number | null
+  /**
+   * Which piece is being written, when the export is a batch of them. `total`
+   * is 1 for a joined movie, and the readout says nothing extra in that case.
+   *
+   * ⚠️ `fraction`, `framesDone` and `secondsLeft` all describe THIS PIECE, not
+   * the batch — they come straight from the encoder, which has never heard of
+   * a batch. A progress bar that silently resets to zero four times reads as a
+   * bug, so `Progress.tsx` shows the piece counter alongside it rather than
+   * pretending the bar spans the whole job.
+   */
+  piece: { index: number; total: number; name: string }
 }
 
 /** Stills we can put on the timeline as an intro or outro card. */
@@ -119,7 +132,25 @@ interface EditorState {
   frame: FrameChoice
   plan: TimelinePlan | null
   progress: RunProgress | null
+  /**
+   * One movie, or one file per cut.
+   *
+   * This is the whole of the "export each piece separately" feature's state.
+   * There is no separate mode to enter, no list of split points to manage and
+   * no second screen: the cuts already ON the timeline are the pieces, so this
+   * flag only decides whether they are joined back together on the way out.
+   */
+  mode: ExportMode
+  /**
+   * What the primary Save button saves: the movie, or the zip.
+   *
+   * Deliberately still one `ConvertedFile`, so `download()`, `ResultCard`'s
+   * headline and the "% smaller" comparison did not have to learn about
+   * batches. The individual files live in `pieces` beside it.
+   */
   result: ConvertedFile | null
+  /** The individual pieces, when the export was a batch. Null otherwise. */
+  pieces: ConvertedFile[] | null
   error: string | null
   /** Set when the export could not run at all — e.g. the renderer isn't in the package yet. */
   blocked: string | null
@@ -152,6 +183,7 @@ interface EditorState {
   cardDuration(sourceId: SourceId, seconds: number): void
 
   updateSettings(patch: Partial<VideoSettings>): void
+  setMode(mode: ExportMode): void
   setFramePreset(preset: FramePresetId): void
   setCustomFrame(patch: Partial<FrameSize>): void
   acceptAlternative(): void
@@ -163,6 +195,8 @@ interface EditorState {
   forgetRecent(id: string): Promise<void>
   setIntent(intent: 'convert' | null): void
   download(): void
+  /** Save one piece on its own, without unzipping. */
+  downloadPiece(index: number): void
   reset(): void
 }
 
@@ -170,6 +204,25 @@ interface EditorState {
 function residentBytes(timeline: Timeline, assets: Record<SourceId, SourceAsset>): number {
   const used = new Set(timeline.clips.map((c) => c.sourceId))
   return [...used].reduce((total, id) => total + (assets[id]?.file.size ?? 0), 0)
+}
+
+/**
+ * Hand a finished file to the browser.
+ *
+ * Shared by the movie, the zip and a single piece, because all three are the
+ * same act — and the Safari note below was learned once and should not have to
+ * be learned again in a second copy of this.
+ */
+function save(file: ConvertedFile | null): void {
+  if (!file) return
+  const url = URL.createObjectURL(file.blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = file.name
+  a.click()
+  // Revoked on the next tick rather than immediately: Safari has been known to
+  // cancel the download if the URL dies in the same frame as the click.
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 export const useEditorStore = create<EditorState>((set, get) => {
@@ -186,10 +239,14 @@ export const useEditorStore = create<EditorState>((set, get) => {
    * user can still change it, rather than discovered when Export is pressed.
    */
   function reflow(timeline: Timeline, overrides: Partial<EditorState> = {}) {
-    const { assets, settings, frame } = get()
+    const { assets, settings, frame, mode } = get()
     const framed = applyFrame(timeline, frame)
+    // ⚠️ The MODE goes into the plan, because the two modes predict different
+    // numbers from the same timeline — a gap is black in a joined movie and
+    // simply absent from a zip. The button shows `plan.estimate`, so a plan
+    // that did not know the mode would put the joined size on a zip button.
     const plan = framed.clips.length
-      ? planTimelineExport(framed, residentBytes(framed, assets), settings)
+      ? planTimelineExport(framed, residentBytes(framed, assets), settings, mode)
       : null
     set({ timeline: framed, plan, ...overrides } as Partial<EditorState>)
   }
@@ -208,7 +265,9 @@ export const useEditorStore = create<EditorState>((set, get) => {
     frame: DEFAULT_FRAME,
     plan: null,
     progress: null,
+    mode: 'one',
     result: null,
+    pieces: null,
     error: null,
     recents: [],
     intent: null,
@@ -223,7 +282,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     // lands on the timeline in milliseconds and without touching memory.
     addFiles: async (files, placement = 'append') => {
       if (!files.length) return
-      set({ status: 'reading', error: null, result: null })
+      set({ status: 'reading', error: null, result: null, pieces: null })
 
       let timeline = get().timeline
       const assets = { ...get().assets }
@@ -393,15 +452,44 @@ export const useEditorStore = create<EditorState>((set, get) => {
       get().updateSettings(alternative.settings)
     },
 
+    setMode: (mode) => {
+      if (get().mode === mode) return
+      set({ mode })
+      // Re-plan: the two modes predict different totals from the same timeline,
+      // and the number on the button comes from the plan.
+      reflow(get().timeline)
+    },
+
     exportEdit: async () => {
-      const { timeline, assets, settings, plan, status } = get()
+      const { timeline, assets, settings, plan, status, mode } = get()
       if (status === 'exporting' || !timeline.clips.length) return
       // The refusal is enforced here as well as on the button. A disabled button
       // is a hint; this is the guarantee.
       if (plan?.verdict === 'refuse') return
 
+      const segments = mode === 'separate' ? segmentsOf(timeline) : []
+      if (mode === 'separate' && segments.length === 0) {
+        // Same guarantee for the other refusal: the timeline stopped being a
+        // plain row of cuts (a transition was added, a clip was stacked) while
+        // "separate files" was still selected.
+        set({ blocked: separateBlocked(timeline) })
+        return
+      }
+
       const files: Record<SourceId, File> = {}
       for (const [id, asset] of Object.entries(assets)) files[id] = asset.file
+
+      // Predicted frames per piece — the WEIGHTS that turn the encoder's
+      // per-piece reports into one bar that crosses the whole batch. See
+      // `batchProgress()`; an empty array (the joined export) makes every line
+      // below collapse to exactly what the encoder said.
+      const fps = timeline.fps > 0 ? timeline.fps : DEFAULT_FPS
+      const weights = segments.map((segment) => Math.max(1, Math.round(segment.durationSec * fps)))
+      const startedAt = Date.now()
+      let finishedFrames = 0
+      let finishedBytes = 0
+
+      const firstPiece = { index: 1, total: Math.max(1, segments.length), name: segments[0]?.name ?? '' }
 
       set({
         status: 'exporting',
@@ -409,22 +497,60 @@ export const useEditorStore = create<EditorState>((set, get) => {
         error: null,
         blocked: null,
         result: null,
-        progress: { fraction: 0, framesDone: 0, framesTotal: 0, bytesOut: 0, startedAt: Date.now(), secondsLeft: null },
+        pieces: null,
+        progress: { fraction: 0, framesDone: 0, framesTotal: 0, bytesOut: 0, startedAt, secondsLeft: null, piece: firstPiece },
       })
 
-      try {
-        const result = await exportTimeline({ timeline, files, settings }, (detail) => {
-          const started = get().progress?.startedAt ?? Date.now()
-          const elapsed = (Date.now() - started) / 1000
-          set({
-            progress: {
-              ...detail,
-              startedAt: started,
-              secondsLeft: secondsRemaining(detail.framesDone, detail.framesTotal, elapsed),
-            },
-          })
+      /**
+       * One progress writer for both modes.
+       *
+       * The bytes are cumulative on purpose: `plan.estimate.bytes` predicts the
+       * WHOLE export, so an overrun warning comparing one piece against the
+       * batch's prediction would never fire. Banking each finished piece's real
+       * size keeps the two numbers comparable all the way through.
+       */
+      const track = (detail: VideoProgress, piece: { index: number; total: number; name: string }) => {
+        const remaining = weights.slice(piece.index).reduce((total, frames) => total + frames, 0)
+        const batch = batchProgress(finishedFrames, detail, weights[piece.index - 1] ?? 0, remaining)
+        const elapsed = (Date.now() - startedAt) / 1000
+        set({
+          progress: {
+            ...detail,
+            ...batch,
+            fraction: batch.framesTotal > 0 ? batch.framesDone / batch.framesTotal : detail.fraction,
+            bytesOut: finishedBytes + detail.bytesOut,
+            startedAt,
+            secondsLeft: secondsRemaining(batch.framesDone, batch.framesTotal, elapsed),
+            piece,
+          },
         })
-        set({ status: 'done', result })
+      }
+
+      try {
+        if (mode === 'separate') {
+          const written = await exportSegments(
+            { timeline, files, settings },
+            {
+              onPiece: (piece) =>
+                set((s) => ({ progress: s.progress ? { ...s.progress, piece } : s.progress })),
+              onDetail: track,
+              onPieceDone: (piece, file) => {
+                finishedFrames += weights[piece.index - 1] ?? 0
+                finishedBytes += file.blob.size
+              },
+            },
+          )
+          // Only now, with every piece in hand. Zipping as we went would mean
+          // holding the pieces AND a growing zip, which is the one thing the
+          // memory plan budgets against.
+          const zip = await zipPieces(written, zipName(timeline))
+          set({ status: 'done', result: zip, pieces: written })
+        } else {
+          const result = await exportTimeline({ timeline, files, settings }, (detail) =>
+            track(detail, firstPiece),
+          )
+          set({ status: 'done', result, pieces: null })
+        }
       } catch (err) {
         // Whatever went wrong, the edit itself survives it — the timeline is
         // left exactly as it was so the user can change a setting and try
@@ -476,18 +602,12 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
     setIntent: (intent) => set({ intent }),
 
-    download: () => {
-      const result = get().result
-      if (!result) return
-      const url = URL.createObjectURL(result.blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = result.name
-      a.click()
-      // Revoked on the next tick rather than immediately: Safari has been known
-      // to cancel the download if the URL dies in the same frame as the click.
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
-    },
+    download: () => save(get().result),
+
+    // A zip of five pieces is the right default, and a poor way to get at ONE
+    // of them — the pieces are already in memory, so offering them individually
+    // costs nothing but a click.
+    downloadPiece: (index) => save(get().pieces?.[index] ?? null),
 
     reset: () => {
       for (const asset of Object.values(get().assets)) URL.revokeObjectURL(asset.url)
@@ -507,6 +627,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
         plan: null,
         progress: null,
         result: null,
+        pieces: null,
         error: null,
         blocked: null,
         // Back at the front door, so the way in is a fresh question. `recents`
@@ -529,6 +650,10 @@ export const selectMaxZoom = (s: EditorState) => maxZoomFor(s.viewportPx, timeli
 export const selectSelectedClip = (s: EditorState) =>
   s.selectedClipId ? clipById(s.timeline, s.selectedClipId) : undefined
 export const selectRoute = (s: EditorState) => exportRoute(s.timeline)
+/** Why "separate files" is not available on this timeline, or null if it is. */
+export const selectSeparateBlock = (s: EditorState) => separateBlocked(s.timeline)
+/** How many files "separate files" would produce right now. */
+export const selectSegmentCount = (s: EditorState) => segmentsOf(s.timeline).length
 /**
  * The exported frame size — what the file will really be. The player draws its
  * canvas at this shape, so the preview's black bars are the file's black bars.

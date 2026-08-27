@@ -34,7 +34,7 @@ import { summarise } from '../lib/summary'
 // ⚠️ This was a `<dl>` of `<dt>`/`<dd>` pairs and can't go back to being one.
 // A disclosure needs a `<button>` next to the term, and inside a `<dl>` the
 // only permitted children are `<dt>`, `<dd>` and a `<div>` wrapping them — a
-// button is not valid there. It is a `<ul>` of nine facts instead.
+// button is not valid there. It is a `<ul>` of ten facts instead.
 export default function Honesty() {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 text-[12.5px] leading-relaxed dark:border-slate-800 dark:bg-slate-900">
@@ -42,7 +42,7 @@ export default function Honesty() {
         What it does, and what it deliberately doesn’t
       </h2>
       <p className="mt-1 text-[11.5px] text-slate-500 dark:text-slate-500">
-        Nine straight answers. Open one for the reasoning.
+        Ten straight answers. Open one for the reasoning.
       </p>
 
       <ul className="mt-3 divide-y divide-slate-100 dark:divide-slate-800">
@@ -58,6 +58,21 @@ export default function Honesty() {
           a video on the front or the end, and crossfade or fade to black
           between them. A clip carries its own sound, so cutting the picture
           cuts the sound at the same instant — they cannot come apart.
+        </Row>
+
+        <Row
+          term="Splits into files"
+          summary="Every cut can come out as its own MP4, the whole set in one zip."
+        >
+          Cut the video wherever you want it split, then ask for{' '}
+          <strong className="font-semibold">separate files</strong>: each piece
+          is written as its own MP4 and they come down together as one .zip,
+          numbered so they sort back into the order you cut them. The settings
+          below apply to every piece — there is nothing to set up per file. It
+          needs a plain row of cuts, though: a clip stacked on a second track,
+          or a crossfade, belongs to two pieces at once, so those are refused
+          and said so rather than guessed at. The zip is built in this tab like
+          everything else, so it counts against the same ceiling.
         </Row>
 
         <Row

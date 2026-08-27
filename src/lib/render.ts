@@ -37,6 +37,8 @@ import {
   type VideoSettings,
 } from '@unisim/media'
 import { evenEdge, outputFrame } from './frame'
+import { segmentsOf, separateBlocked } from './segments'
+import { createZip } from './zip'
 
 /**
  * Everything the renderer needs that the `Timeline` itself does not carry.
@@ -186,3 +188,81 @@ export function trimForClip(clip: Clip, sourceDurationSec: number): VideoSetting
   }
 }
 
+
+/* ── Separate files ──────────────────────────────────────────────────────────
+ *
+ * The same export, N times, plus a zip. There is deliberately no second
+ * pipeline here: each piece is a one-clip `Timeline` (see `lib/segments.ts`)
+ * handed to `exportTimeline()` above, which means every piece goes through the
+ * same route decision, the same estimate and the same encoder as a normal
+ * export — and in practice takes the `compress` route, the oldest and
+ * best-proven path in the app.
+ */
+
+/** Which piece is being written, for the progress readout. */
+export interface SegmentProgress {
+  /** 1-based. */
+  index: number
+  total: number
+  name: string
+}
+
+/**
+ * Write every piece, in timeline order, one at a time.
+ *
+ * **Sequentially, and that is not laziness.** Two encodes at once would hold two
+ * outputs plus two decoders in memory against a budget `lib/memory.ts` has
+ * already promised the user, and WebCodecs on a main thread would not go twice
+ * as fast anyway. One at a time also means the piece being written is the piece
+ * the progress readout names.
+ *
+ * A failure part-way through throws with the piece named, and the pieces
+ * already finished are lost. That is the honest behaviour for now: keeping them
+ * would mean offering a half-done zip, and "here are 3 of your 5 clips" needs a
+ * UI that says which two are missing and why.
+ */
+export async function exportSegments(
+  { timeline, files, settings }: TimelineRenderInput,
+  hooks: {
+    /** Before a piece starts. */
+    onPiece?: (piece: SegmentProgress) => void,
+    /** While it is being written, with the encoder's own per-piece numbers. */
+    onDetail?: (progress: VideoProgress, piece: SegmentProgress) => void,
+    /** After it is written — the caller banks its real size for the batch readout. */
+    onPieceDone?: (piece: SegmentProgress, file: ConvertedFile) => void,
+  } = {},
+): Promise<ConvertedFile[]> {
+  const segments = segmentsOf(timeline)
+  if (segments.length === 0) {
+    throw new Error(separateBlocked(timeline) ?? 'This edit cannot be written out as separate files.')
+  }
+
+  const done: ConvertedFile[] = []
+  for (const segment of segments) {
+    const piece: SegmentProgress = { index: segment.index, total: segments.length, name: segment.name }
+    hooks.onPiece?.(piece)
+    try {
+      const result = await exportTimeline(
+        { timeline: segment.timeline, files, settings },
+        hooks.onDetail ? (detail) => hooks.onDetail?.(detail, piece) : undefined,
+      )
+      // The name comes from the segment, not from `exportName()`: a piece is not
+      // "the edit", and five files called `holiday-edit.mp4` is not a zip.
+      const file = { ...result, name: segment.name }
+      done.push(file)
+      hooks.onPieceDone?.(piece, file)
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : 'the encoder stopped'
+      throw new Error(
+        `Piece ${piece.index} of ${piece.total} (${piece.name}) could not be written — ${reason}`,
+      )
+    }
+  }
+  return done
+}
+
+/** The finished pieces, as one file to save. STORED — an MP4 does not deflate. */
+export async function zipPieces(pieces: ConvertedFile[], name: string): Promise<ConvertedFile> {
+  const blob = await createZip(pieces.map((p) => ({ name: p.name, blob: p.blob })))
+  return { blob, name }
+}

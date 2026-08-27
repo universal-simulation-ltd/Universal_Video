@@ -220,13 +220,13 @@ describe('the memory budget is re-planned when the frame changes', () => {
     const source = 200 * MiB
     const small = shot(640, 360, 3600)
     const huge = applyFrame(small, choose('custom', { width: 7680, height: 4320 }))
-    expect(planTimelineExport(small, source, DEFAULT_VIDEO_SETTINGS, {
+    expect(planTimelineExport(small, source, DEFAULT_VIDEO_SETTINGS, 'one', {
       totalBytes: 1.5 * GiB,
       basis: 'desktop-default',
       deviceMemoryGb: null,
     }).verdict).toBe('ok')
 
-    const refused = planTimelineExport(huge, source, DEFAULT_VIDEO_SETTINGS, {
+    const refused = planTimelineExport(huge, source, DEFAULT_VIDEO_SETTINGS, 'one', {
       totalBytes: 1.5 * GiB,
       basis: 'desktop-default',
       deviceMemoryGb: null,

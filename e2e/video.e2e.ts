@@ -84,6 +84,61 @@ async function readBackExport(page: Page) {
 }
 
 /**
+ * Save the ZIP, unpack it in the page, and load every entry with the browser's
+ * own demuxer.
+ *
+ * The unzipping is done here rather than in Node so that the entries never
+ * leave the tab — and so the thing being decoded is exactly the bytes a user
+ * would get. Entries are STORED, so "unzip" is: read the end-of-central-directory
+ * record, walk the directory, and slice each entry out at the offset it names.
+ * If any of those offsets is wrong the slice is not an MP4 and `<video>` refuses
+ * it, which is the point.
+ */
+async function readBackZip(page: Page) {
+  return page.evaluate(async () => {
+    const captured: Blob[] = []
+    const real = URL.createObjectURL
+    URL.createObjectURL = (obj: Blob | MediaSource) => {
+      if (obj instanceof Blob) captured.push(obj)
+      return real.call(URL, obj)
+    }
+    const save = [...document.querySelectorAll('button')].find((b) => /^Save all /.test(b.textContent ?? ''))
+    save?.click()
+    await new Promise((r) => setTimeout(r, 300))
+    URL.createObjectURL = real
+
+    const zip = new Uint8Array(await captured[captured.length - 1].arrayBuffer())
+    const view = new DataView(zip.buffer)
+    const endAt = zip.length - 22
+    const count = view.getUint16(endAt + 8, true)
+    let at = view.getUint32(endAt + 16, true)
+
+    const out: { name: string; size: number; duration: number; width: number; height: number }[] = []
+    for (let i = 0; i < count; i += 1) {
+      const size = view.getUint32(at + 24, true)
+      const nameLength = view.getUint16(at + 28, true)
+      const localAt = view.getUint32(at + 42, true)
+      const name = new TextDecoder().decode(zip.subarray(at + 46, at + 46 + nameLength))
+      const dataAt =
+        localAt + 30 + view.getUint16(localAt + 26, true) + view.getUint16(localAt + 28, true)
+      const bytes = zip.slice(dataAt, dataAt + size)
+
+      const video = document.createElement('video')
+      video.src = real.call(URL, new Blob([bytes], { type: 'video/mp4' }))
+      await new Promise<void>((resolve, reject) => {
+        video.onloadedmetadata = () => resolve()
+        video.onerror = () => reject(new Error(`the browser refused ${name}`))
+        setTimeout(() => reject(new Error(`timed out loading ${name}`)), 30_000)
+      })
+
+      out.push({ name, size, duration: video.duration, width: video.videoWidth, height: video.videoHeight })
+      at += 46 + nameLength + view.getUint16(at + 30, true) + view.getUint16(at + 32, true)
+    }
+    return out
+  })
+}
+
+/**
  * Save the export, decode a frame of it, and read individual PIXELS back out.
  *
  * A dimension assertion alone cannot tell a letterbox from a stretch: a portrait
@@ -1055,6 +1110,56 @@ test.describe('Universal Video', () => {
       /unpkg|jsdelivr|cdnjs|ffmpeg|storage\.googleapis|amazonaws/i.test(u),
     )
     expect(forbidden).toEqual([])
+  })
+
+  test('cuts a video into pieces and exports each one as its own file in a zip', async ({ page }) => {
+    // The client ask, driven end to end: cut at a point, ask for separate files,
+    // and get a zip whose entries are REAL videos.
+    //
+    // The assertion that matters is the last one. A zip of the right size with
+    // the right names could still hold two copies of the whole clip, or two
+    // empty files — so each entry is pulled back out of the archive and handed
+    // to the browser's own demuxer, which is the only witness that cannot be
+    // fooled by our own reader agreeing with our own writer.
+    await page.goto('/')
+    await drop(page, 'clip.mp4', FIXTURE_BYTES)
+    await page.getByLabel('Playhead').fill('1')
+    await page.getByRole('button', { name: 'Cut at playhead' }).click()
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(2)
+
+    // The whole UI of the feature: one pill. Its label counts the pieces.
+    await page.getByRole('button', { name: 'Separate files — 2' }).click()
+    await page.getByRole('button', { name: /Export 2 separate videos/ }).click()
+
+    // One bar across the batch, and a line saying which piece is under the
+    // encoder — the thing the bar cannot show.
+    await expect(page.getByText(/Writing piece \d of 2…/)).toBeVisible({ timeout: 60_000 })
+
+    await expect(page.getByRole('button', { name: /^Save all 2 as clip-pieces\.zip$/ })).toBeVisible({
+      timeout: 180_000,
+    })
+
+    // The pieces are listed by name, so the zip is not a black box.
+    await expect(page.getByText('01_clip_00-00-00.mp4')).toBeVisible()
+    await expect(page.getByText('02_clip_00-00-01.mp4')).toBeVisible()
+
+    const entries = await readBackZip(page)
+    expect(entries.map((e) => e.name)).toEqual(['01_clip_00-00-00.mp4', '02_clip_00-00-01.mp4'])
+    for (const entry of entries) {
+      // Chromium loaded it, so it is an MP4 and not a bag of bytes.
+      expect(entry.width).toBe(480)
+      expect(entry.height).toBe(270)
+      // A PIECE, not the whole clip. The source is 2 s and the cut was at 1 s;
+      // the compress route starts at the keyframe at or before the in-point, so
+      // an exact 1.000 would be a lie to assert.
+      expect(entry.duration).toBeGreaterThan(0.4)
+      expect(entry.duration).toBeLessThan(1.6)
+      expect(entry.size).toBeGreaterThan(1000)
+    }
+    // And between them they are the whole clip, not two copies of it.
+    const total = entries.reduce((sum, e) => sum + e.duration, 0)
+    expect(total).toBeGreaterThan(1.5)
+    expect(total).toBeLessThan(2.6)
   })
 })
 
