@@ -42,7 +42,7 @@ import { summarise } from '../lib/summary'
 // ⚠️ This was a `<dl>` of `<dt>`/`<dd>` pairs and can't go back to being one.
 // A disclosure needs a `<button>` next to the term, and inside a `<dl>` the
 // only permitted children are `<dt>`, `<dd>` and a `<div>` wrapping them — a
-// button is not valid there. It is a `<ul>` of ten facts instead.
+// button is not valid there. It is a `<ul>` of eleven facts instead.
 /**
  * Whether a row is open, held for all of them at once so "Open all" can exist.
  *
@@ -96,7 +96,7 @@ export default function Honesty() {
         </button>
       </div>
       <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-500">
-        Ten straight answers. Open one for the reasoning.
+        Eleven straight answers. Open one for the reasoning.
       </p>
 
       <Rows.Provider value={state}>
@@ -196,6 +196,23 @@ export default function Honesty() {
           will not be one. It is the whole claim; one exception would make every
           other sentence here false. Open your browser’s network tab and watch:
           nothing goes out.
+        </Row>
+
+        <Row
+          term="Skips what you can’t see"
+          summary="A clip hidden behind another isn’t drawn — and if it’s silent too, it isn’t decoded at all."
+        >
+          Two clips stacked on separate tracks are two videos being decoded at
+          once, which is what makes a preview stutter on a modest machine. So a
+          clip completely hidden behind another is not drawn, and if it is
+          silent as well as invisible it is stopped altogether. It has to be{' '}
+          <em>completely</em> hidden to count: a clip of a different shape sits
+          in the middle of the frame with black down the sides, and that black
+          is not black — it is whatever is underneath — so it hides nothing.
+          Neither does a clip part-way through a crossfade, because you can see
+          through it. And a hidden clip you can still <em>hear</em> keeps
+          playing: putting a shot over a running voiceover is an edit, not a
+          mistake.
         </Row>
 
         <Row

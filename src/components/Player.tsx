@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { timelineDuration } from '@unisim/media'
-import { audioAt, fitInside, layersAt } from '../lib/compose'
+import { audioAt, fitInside, layersAt, visibleLayers, type Layer, type LayerSize } from '../lib/compose'
 import { timecode } from '../lib/timecode'
 import {
   selectFrameHeight,
@@ -61,6 +61,9 @@ export default function Player() {
   const lastTickRef = useRef(0)
   const playingRef = useRef(playing)
   const timelineRef = useRef(timeline)
+  // The output frame, for the culling test. A ref because `syncMedia` and
+  // `draw` are stable callbacks reading refs rather than re-created per render.
+  const frameRef = useRef({ width: 1920, height: 1080 })
 
   timelineRef.current = timeline
   playingRef.current = playing
@@ -76,6 +79,26 @@ export default function Player() {
 
   const duration = timelineDuration(timeline)
   const aspect = frameWidth > 0 && frameHeight > 0 ? frameWidth / frameHeight : 16 / 9
+  frameRef.current = { width: frameWidth, height: frameHeight }
+
+  /**
+   * How big a layer's picture actually is.
+   *
+   * ⚠️ Read off the LIVE element, not off `TimelineSource.width/height`, and
+   * the difference matters in exactly one direction. The cull below throws away
+   * a layer on the strength of this answer, so being wrong here means blanking
+   * picture the user can see — and the element is the same thing the canvas
+   * will draw, so it cannot disagree with what is on screen. A source whose
+   * metadata has not loaded returns null, which the cull treats as "does not
+   * cover".
+   */
+  const sizeOf = useCallback((layer: Layer): LayerSize | null => {
+    const el = mediaRef.current.get(layer.clip.sourceId)
+    if (!el) return null
+    const width = el instanceof HTMLVideoElement ? el.videoWidth : el.naturalWidth
+    const height = el instanceof HTMLVideoElement ? el.videoHeight : el.naturalHeight
+    return width > 0 && height > 0 ? { width, height } : null
+  }, [])
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -90,7 +113,20 @@ export default function Player() {
     ctx.fillStyle = '#000'
     ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-    for (const layer of layersAt(tl, at)) {
+    // Nothing hidden behind an opaque, frame-filling layer is drawn: on a
+    // stacked timeline that is a whole `drawImage` of a full-frame video per
+    // animation frame, spent on pixels that are immediately painted over.
+    const frame = frameRef.current
+    const visible = visibleLayers(layersAt(tl, at), frame.width, frame.height, sizeOf)
+    // How many layers this frame actually cost. On the canvas because the cull
+    // is otherwise invisible by construction — a correct cull looks exactly
+    // like no cull — so without this the only way to test it is to measure
+    // frame rates, which is not a test. Written only when it changes; a dataset
+    // write per animation frame is a layout-thrash waiting to happen.
+    const drawn = String(visible.length)
+    if (canvas.dataset.drawn !== drawn) canvas.dataset.drawn = drawn
+
+    for (const layer of visible) {
       const el = mediaRef.current.get(layer.clip.sourceId)
       if (!el) continue
       const isVideo = el instanceof HTMLVideoElement
@@ -106,22 +142,35 @@ export default function Player() {
       ctx.drawImage(el, box.x, box.y, box.width, box.height)
       ctx.globalAlpha = 1
     }
-  }, [])
+  }, [sizeOf])
 
   /** Point every source element at the frame (and the volume) it should be at. */
   const syncMedia = useCallback((at: number, isPlaying: boolean) => {
     const tl = timelineRef.current
-    const wanted = new Map(layersAt(tl, at).map((l) => [l.clip.sourceId, l.sourceSec]))
+    const frame = frameRef.current
+    const layers = layersAt(tl, at)
+    const wanted = new Map(layers.map((l) => [l.clip.sourceId, l.sourceSec]))
     const gains = new Map(audioAt(tl, at).map((a) => [a.clip.sourceId, a.gain]))
+    const seen = new Set(
+      visibleLayers(layers, frame.width, frame.height, sizeOf).map((l) => l.clip.sourceId),
+    )
 
     for (const [sourceId, el] of mediaRef.current) {
       if (!(el instanceof HTMLVideoElement)) continue
       const target = wanted.get(sourceId)
-      if (target === undefined) {
+      const gain = gains.get(sourceId) ?? 0
+      // ⚠️ HIDDEN IS NOT ENOUGH TO PAUSE. A clip behind another is still
+      // audible — laying a shot over a running voiceover is an ordinary edit,
+      // not a mistake — and a paused `<video>` makes no sound. So a source is
+      // only stopped when it is both out of sight AND silent; that is the case
+      // where it can contribute nothing, and where stopping it takes a whole
+      // video decode off the main thread. A hidden but audible source keeps
+      // playing (the browser will decode its frames; there is no way to have
+      // the sound without that) and simply is not drawn.
+      if (target === undefined || (!seen.has(sourceId) && gain === 0)) {
         if (!el.paused) el.pause()
         continue
       }
-      const gain = gains.get(sourceId) ?? 0
       el.volume = Math.min(1, Math.max(0, gain))
       el.muted = gain === 0
 
@@ -132,7 +181,7 @@ export default function Player() {
       if (isPlaying && el.paused) void el.play().catch(() => { /* autoplay policy; the picture still runs */ })
       if (!isPlaying && !el.paused) el.pause()
     }
-  }, [])
+  }, [sizeOf])
 
   // One animation loop for the whole player. It runs whenever there is anything
   // on the timeline — not only during playback — so a seek always repaints.
@@ -256,6 +305,7 @@ export default function Player() {
           return source.kind === 'video' ? (
             <video
               key={source.id}
+              data-source-id={source.id}
               ref={(el) => {
                 if (el) mediaRef.current.set(source.id, el)
                 else mediaRef.current.delete(source.id)
@@ -267,6 +317,7 @@ export default function Player() {
           ) : (
             <img
               key={source.id}
+              data-source-id={source.id}
               ref={(el) => {
                 if (el) mediaRef.current.set(source.id, el)
                 else mediaRef.current.delete(source.id)

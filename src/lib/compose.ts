@@ -112,3 +112,87 @@ export function fitInside(
 function clamp01(n: number): number {
   return Math.min(1, Math.max(0, n))
 }
+
+/**
+ * How much of the frame a covering layer may miss and still count as covering
+ * it, in output-frame pixels.
+ *
+ * Two, not zero, because the frame's edges are rounded to EVEN numbers
+ * (`evenEdge`, for H.264's macroblocks) — so a 1919×1080 source lands in a
+ * 1920×1080 frame and is one pixel short of filling it through no fault of the
+ * user's. Two, not more, because the cost of being wrong is asymmetric: getting
+ * this too generous means a genuinely visible bar of the layer below is culled
+ * and shows black instead. A miss of two frame pixels is about a third of a
+ * pixel in the 640-wide preview, which is below anything that can be drawn.
+ */
+const COVER_EPSILON = 2
+
+export interface LayerSize {
+  width: number
+  height: number
+}
+
+/**
+ * Drawn *contained*, does a source of this shape fill the whole output frame?
+ *
+ * ⚠️ **This is the entire safety of the culling below, and it is not "is this
+ * the top layer".** Every layer is drawn with `fitInside` — contain, never
+ * cover — so a portrait clip in a landscape frame is pillarboxed, and the black
+ * down its sides is not black: it is whatever is UNDERNEATH. A naive "the
+ * topmost layer wins" cull would blank those bars, throwing away picture the
+ * user can currently see. Only a layer whose own aspect matches the frame's
+ * actually hides what is below it.
+ */
+export function coversFrame(
+  sourceWidth: number,
+  sourceHeight: number,
+  frameWidth: number,
+  frameHeight: number,
+): boolean {
+  if (sourceWidth <= 0 || sourceHeight <= 0 || frameWidth <= 0 || frameHeight <= 0) return false
+  const box = fitInside(sourceWidth, sourceHeight, frameWidth, frameHeight)
+  return box.width >= frameWidth - COVER_EPSILON && box.height >= frameHeight - COVER_EPSILON
+}
+
+/**
+ * The layers that can actually be seen: everything hidden behind a fully opaque,
+ * frame-filling layer is dropped.
+ *
+ * Stacking two clips means two simultaneous `<video>` decodes, and on a modest
+ * machine that is the difference between a preview that plays and one that
+ * stutters — so a layer nobody can see should not be costing anything to draw.
+ *
+ * Two conditions, both necessary:
+ *
+ * - **Fully opaque.** A layer mid-transition is see-through *by definition*;
+ *   that is what a crossfade IS, and culling under one would delete the outgoing
+ *   scene from the dissolve.
+ * - **Fills the frame.** See `coversFrame` — a pillarboxed clip shows the layer
+ *   beneath it down both sides.
+ *
+ * `sizeOf` returning null means "I do not know how big this is yet" (a `<video>`
+ * that has not loaded its metadata), and is treated as NOT covering. Culling on
+ * a guess would blank the picture for the few frames before a source loads.
+ *
+ * ⚠️ **This is about the PICTURE only.** A clip hidden behind another is still
+ * audible — that is an ordinary edit, not a mistake — so nothing here may be
+ * used to decide what to play. See `Player.syncMedia`, which pauses a hidden
+ * source only when it is also silent.
+ */
+export function visibleLayers(
+  layers: Layer[],
+  frameWidth: number,
+  frameHeight: number,
+  sizeOf: (layer: Layer) => LayerSize | null,
+): Layer[] {
+  // Downwards from the top, because the HIGHEST cover is the one that matters:
+  // it hides everything below it, including any lower cover.
+  for (let i = layers.length - 1; i >= 1; i -= 1) {
+    const layer = layers[i]
+    if (layer.opacity < 1) continue
+    const size = sizeOf(layer)
+    if (!size) continue
+    if (coversFrame(size.width, size.height, frameWidth, frameHeight)) return layers.slice(i)
+  }
+  return layers
+}

@@ -10,7 +10,7 @@ import {
   setClipAudio,
   setTransition,
 } from './edit'
-import { audioAt, fitInside, layersAt, opacityAt } from './compose'
+import { audioAt, coversFrame, fitInside, layersAt, opacityAt, visibleLayers, type Layer } from './compose'
 
 function base(): Timeline {
   let tl = emptyTimeline()
@@ -134,5 +134,109 @@ describe('fitting a frame into the output', () => {
     const box = fitInside(1080, 1920, 1920, 1080)
     expect(box.height).toBe(1080)
     expect(box.x).toBeGreaterThan(0)
+  })
+})
+
+describe('not drawing what nobody can see', () => {
+  const LANDSCAPE = { width: 1920, height: 1080 }
+  const PORTRAIT = { width: 1080, height: 1920 }
+
+  /** Layers in painting order, bottom first — what `layersAt` returns. */
+  function stack(...opacities: number[]): Layer[] {
+    return opacities.map((opacity, i) => ({
+      clip: { id: `c${i}`, sourceId: `s${i}` } as unknown as Layer['clip'],
+      sourceSec: 0,
+      opacity,
+    }))
+  }
+
+  const allLandscape = () => LANDSCAPE
+  const sizeById = (sizes: Record<string, { width: number; height: number } | null>) => (l: Layer) =>
+    sizes[l.clip.sourceId] ?? null
+
+  describe('coversFrame', () => {
+    it('says yes when the shapes match, at any scale', () => {
+      expect(coversFrame(1920, 1080, 1920, 1080)).toBe(true)
+      expect(coversFrame(640, 360, 1920, 1080)).toBe(true)
+      expect(coversFrame(3840, 2160, 1920, 1080)).toBe(true)
+    })
+
+    it('⚠️ says no to a shape that gets bars — the bars are the layer BELOW', () => {
+      // The whole safety of the cull. A portrait clip in a landscape frame is
+      // pillarboxed, and what shows down its sides is not black: it is whatever
+      // is underneath. Culling it would blank picture the user can see.
+      expect(coversFrame(1080, 1920, 1920, 1080)).toBe(false)
+      expect(coversFrame(1920, 1080, 1080, 1920)).toBe(false)
+      expect(coversFrame(1000, 1000, 1920, 1080)).toBe(false)
+    })
+
+    it('tolerates the even-number rounding the frame itself does', () => {
+      // `evenEdge` rounds a frame's edges to even numbers for H.264, so a
+      // 1919-wide source lands in a 1920-wide frame and is one pixel short
+      // through no fault of the user's.
+      expect(coversFrame(1919, 1080, 1920, 1080)).toBe(true)
+      expect(coversFrame(1920, 1081, 1920, 1080)).toBe(true)
+
+      // ⚠️ …and no further. The tolerance must stay far below anything a viewer
+      // could see, because being too generous culls a layer whose bars are
+      // real and shows black in their place.
+      expect(coversFrame(1900, 1080, 1920, 1080)).toBe(false)
+    })
+
+    it('says no rather than dividing by zero on an unloaded source', () => {
+      expect(coversFrame(0, 0, 1920, 1080)).toBe(false)
+      expect(coversFrame(1920, 1080, 0, 0)).toBe(false)
+    })
+  })
+
+  describe('visibleLayers', () => {
+    it('drops everything under an opaque, frame-filling layer', () => {
+      const layers = stack(1, 1)
+      expect(visibleLayers(layers, 1920, 1080, allLandscape)).toEqual([layers[1]])
+    })
+
+    it('leaves a lone layer alone', () => {
+      const layers = stack(1)
+      expect(visibleLayers(layers, 1920, 1080, allLandscape)).toEqual(layers)
+    })
+
+    it('⚠️ keeps the layer under a TRANSITION — that is what a crossfade is', () => {
+      // The incoming clip is at 40%: the outgoing one is visible through it, and
+      // culling here would delete the outgoing scene from the dissolve.
+      const layers = stack(1, 0.4)
+      expect(visibleLayers(layers, 1920, 1080, allLandscape)).toEqual(layers)
+    })
+
+    it('⚠️ keeps the layer under a PILLARBOXED clip', () => {
+      const layers = stack(1, 1)
+      const sizes = sizeById({ s0: LANDSCAPE, s1: PORTRAIT })
+      expect(visibleLayers(layers, 1920, 1080, sizes)).toEqual(layers)
+    })
+
+    it('keeps everything when the covering layer has not loaded its size yet', () => {
+      // Culling on a guess would blank the picture for the frames before a
+      // source's metadata arrives.
+      const layers = stack(1, 1)
+      expect(visibleLayers(layers, 1920, 1080, sizeById({ s0: LANDSCAPE, s1: null }))).toEqual(layers)
+    })
+
+    it('cuts at the HIGHEST cover, not the first one it meets', () => {
+      // Three stacked: the top one hides both below it, including the middle
+      // one which is itself a cover.
+      const layers = stack(1, 1, 1)
+      expect(visibleLayers(layers, 1920, 1080, allLandscape)).toEqual([layers[2]])
+    })
+
+    it('keeps a covered layer that sits above a see-through one', () => {
+      // Bottom is hidden by the middle; the top is fading in over both, so the
+      // middle survives — and the bottom does not.
+      const layers = stack(1, 1, 0.5)
+      expect(visibleLayers(layers, 1920, 1080, allLandscape)).toEqual([layers[1], layers[2]])
+    })
+
+    it('never returns an empty list', () => {
+      expect(visibleLayers([], 1920, 1080, allLandscape)).toEqual([])
+      expect(visibleLayers(stack(1), 1920, 1080, allLandscape)).toHaveLength(1)
+    })
   })
 })

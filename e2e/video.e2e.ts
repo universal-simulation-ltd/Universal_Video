@@ -52,8 +52,44 @@ async function clickAppMenuItem(page: Page, name: RegExp) {
   await item.evaluate((el: HTMLElement) => el.click())
 }
 
+/**
+ * Drag the second clip back over the first so the two overlap and stack.
+ *
+ * ⚠️ Scroll it into view FIRST and take the box after: `page.mouse` works in
+ * viewport coordinates and does no scrolling of its own, so a clip below the
+ * fold gets a drag aimed at whatever happens to be at those coordinates.
+ */
+async function stackSecondOverFirst(page: Page) {
+  const second = page.locator('[data-testid=clip]').nth(1)
+  await second.scrollIntoViewIfNeeded()
+  const box = (await second.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  // All the way back to the start — far enough that the magnet lands it on 0
+  // rather than butt-joined where it began.
+  await page.mouse.move(box.x - box.width / 2, box.y + box.height / 2, { steps: 10 })
+  await page.mouse.up()
+  await expect
+    .poll(async () => (await clips(page)).filter((c) => c.track === 1).length, { timeout: 5_000 })
+    .toBe(1)
+}
+
 async function drop(page: Page, name: string, buffer: Buffer) {
   await page.locator('input[type=file]').first().setInputFiles({ name, mimeType: 'video/mp4', buffer })
+}
+
+/**
+ * Add a SECOND clip to the end of the timeline.
+ *
+ * ⚠️ Not `drop()`. That takes the first file input on the page, which is the
+ * front door's drop zone while there is a front door — but once the editor is
+ * up, the first input is the toolbar's **"Add intro…"** picker. Calling
+ * `drop()` twice therefore puts the second file at the FRONT of the timeline
+ * and pushes the first one back, which looks like a working two-clip test right
+ * up until you ask which clip is which.
+ */
+async function addClip(page: Page, name: string, buffer: Buffer) {
+  await page.getByLabel('Add clips…').setInputFiles({ name, mimeType: 'video/mp4', buffer })
 }
 
 /** The clip rectangles on the timeline, as the DOM reports them. */
@@ -487,9 +523,9 @@ test.describe('Universal Video', () => {
     // "Open all" reaches every row, including any added later — the state is a
     // default plus exceptions, so there is no list to keep in step.
     const rows = page.locator('section li button[aria-expanded]')
-    await expect(rows).toHaveCount(10)
+    await expect(rows).toHaveCount(11)
     await page.getByRole('button', { name: 'Open all' }).click()
-    await expect(page.locator('section li button[aria-expanded="true"]')).toHaveCount(10)
+    await expect(page.locator('section li button[aria-expanded="true"]')).toHaveCount(11)
     await page.getByRole('button', { name: 'Close all' }).click()
     await expect(page.locator('section li button[aria-expanded="true"]')).toHaveCount(0)
   })
@@ -748,6 +784,60 @@ test.describe('Universal Video', () => {
     expect(after[0].end).toBeCloseTo(after[1].start, 3)
     expect(after.every((c) => c.track === 0)).toBe(true)
     await expect(page.locator('[data-testid=snap-guide]')).toHaveCount(0)
+  })
+
+  test('a layer hidden behind an opaque, frame-filling one is not drawn — but is still heard', async ({ page }) => {
+    // Stacking two clips means two simultaneous <video> decodes, which is what
+    // makes a preview stutter. A layer nobody can see should not cost anything
+    // to draw — and `data-drawn` is on the canvas because a correct cull looks
+    // exactly like no cull, so there is otherwise nothing to assert on.
+    await page.goto('/')
+    await drop(page, 'a.mp4', FIXTURE_BYTES)
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(1)
+    await addClip(page, 'b.mp4', FIXTURE_BYTES)
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(2)
+
+    const preview = page.locator('[data-testid=preview]')
+    await expect(preview).toHaveAttribute('data-drawn', '1') // nothing overlaps yet
+
+    // Slide the second clip back over the first: same shape, so it covers.
+    await stackSecondOverFirst(page)
+    await page.getByLabel('Playhead').fill('1')
+    await expect(preview).toHaveAttribute('data-drawn', '1')
+
+    // ⚠️ AND STILL AUDIBLE. A clip behind another is not a mistake — laying a
+    // shot over a running voiceover is an ordinary edit — and a paused <video>
+    // makes no sound, so the hidden source must keep playing.
+    const lower = page.locator('video[data-source-id]').first()
+    await page.getByRole('button', { name: 'Play' }).click()
+    await expect.poll(() => lower.evaluate((el: HTMLVideoElement) => el.paused)).toBe(false)
+
+    // Only once it is silent as well as invisible is there nothing left for it
+    // to contribute — and then it is stopped, which is a whole video decode off
+    // the main thread.
+    await page.getByRole('button', { name: 'Pause' }).click()
+    await page.locator('[data-testid=clip]').first().click()
+    await page.getByLabel('Keep this clip’s sound').uncheck()
+    await page.getByRole('button', { name: 'Play' }).click()
+    await expect.poll(() => lower.evaluate((el: HTMLVideoElement) => el.paused)).toBe(true)
+  })
+
+  test('⚠️ a PILLARBOXED clip on top does not hide what is under it', async ({ page }) => {
+    // The trap a naive "topmost layer wins" cull falls into. Layers are drawn
+    // *contained*, so an upright clip in a landscape frame has black down both
+    // sides — and that black is not black, it is whatever is underneath.
+    // Culling here would blank picture the user can see.
+    await page.goto('/')
+    await drop(page, 'a.mp4', FIXTURE_BYTES)
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(1)
+    await addClip(page, 'tall.mp4', PORTRAIT_BYTES)
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(2)
+
+    await stackSecondOverFirst(page)
+    await page.getByLabel('Playhead').fill('1')
+
+    // Both, because the upright one only covers the middle of the frame.
+    await expect(page.locator('[data-testid=preview]')).toHaveAttribute('data-drawn', '2')
   })
 
   test('the timeline lines up with the scrub bar, and the needle with the knob', async ({ page }) => {
