@@ -29,7 +29,7 @@ function cutAtAll(timeline: Timeline, points: number[]): Timeline {
 describe('what can be split into files', () => {
   it('will not offer separate files before anything is cut — and says which control to use', () => {
     const blocked = separateBlocked(oneVideo())
-    expect(blocked).toContain('Cut at playhead')
+    expect(blocked).toContain('press the Cut button')
   })
 
   it('offers them as soon as there is more than one piece', () => {

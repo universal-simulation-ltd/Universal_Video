@@ -27,6 +27,31 @@ const FIXTURE_BYTES = readFileSync(FIXTURE)
 const PORTRAIT = join(HERE, 'fixtures', 'portrait-270x480.mp4')
 const PORTRAIT_BYTES = readFileSync(PORTRAIT)
 
+/**
+ * Open the actions dropdown and click one of its rows.
+ *
+ * ⚠️ **Driven through the DOM, not the mouse, and it has to be.** The SDK's
+ * pill opens on `mouseenter` and closes shortly after `mouseleave` — fine for
+ * a real cursor, which travels continuously from the trigger into the panel,
+ * and hopeless for Playwright, which teleports: the menu opens on the hover
+ * before the click and has closed again by the time the pointer arrives at the
+ * row. `el.click()` dispatches a real MouseEvent that React handles exactly as
+ * it would a user's, without moving a pointer that would shut the panel.
+ *
+ * What this therefore does NOT prove is that the row is reachable with a mouse.
+ * That is SDK chrome shared by every app in the suite, and it is not this
+ * app's test's job to re-prove it.
+ */
+async function clickAppMenuItem(page: Page, name: RegExp) {
+  const item = page.getByRole('menuitem', { name })
+  if (!(await item.isVisible().catch(() => false))) {
+    const trigger = page.locator('button[aria-haspopup="true"][aria-expanded]').first()
+    await trigger.evaluate((el: HTMLElement) => el.click())
+    await expect(item).toBeVisible()
+  }
+  await item.evaluate((el: HTMLElement) => el.click())
+}
+
 async function drop(page: Page, name: string, buffer: Buffer) {
   await page.locator('input[type=file]').first().setInputFiles({ name, mimeType: 'video/mp4', buffer })
 }
@@ -415,34 +440,74 @@ test.describe('Universal Video', () => {
     await expect(page.getByRole('heading', { name: /What it does/ })).toHaveCount(0)
   })
 
-  test('the spec sheet moved under the editor, and every row still opens on click', async ({ page }) => {
+  test('the spec sheet is off the editor and on its own page, reached from the menu', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.goto('/')
     await drop(page, 'clip.mp4', FIXTURE_BYTES)
     await expect(page.locator('[data-testid=clip]')).toHaveCount(1)
 
-    // Collapsed by default: the summary is on the page, the full reasoning is
-    // not. This is the whole point of the box being succinct.
+    // Gone from the editor page entirely (owner, 2026-08-27) — ten facts about
+    // what the app cannot do were the last thing under a working timeline.
+    await expect(page.getByRole('heading', { name: /deliberately doesn/ })).toHaveCount(0)
+
+    // The one way in: the actions dropdown. It is a real link, so it carries an
+    // href a middle-click or a crawler can follow.
+    const trigger = page.locator('button[aria-haspopup="true"][aria-expanded]').first()
+    await trigger.evaluate((el: HTMLElement) => el.click())
+    const link = page.getByRole('menuitem', { name: /More info/ })
+    await expect(link).toBeVisible()
+    // A real link, so middle-click and "copy link address" work and a crawler
+    // can follow it — even though the ordinary click is intercepted below.
+    await expect(link).toHaveAttribute('href', /\/more-info$/)
+    await link.evaluate((el: HTMLElement) => el.click())
+
+    await expect(page).toHaveURL(/\/more-info$/)
+    await expect(page.getByRole('heading', { name: 'More about Universal Video' })).toBeVisible()
+
+    // ⚠️ THE EDIT SURVIVED THE TRIP. `pushState`, not a navigation — a reload
+    // would drop the File handles this tab is holding and silently destroy the
+    // user's timeline for the crime of reading the small print.
+    await page.getByRole('link', { name: /Back to the editor/ }).first().click()
+    await expect(page).not.toHaveURL(/more-info/)
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(1)
+
+    // Back on the page itself: collapsed by default, one click reveals.
+    await clickAppMenuItem(page, /More info/)
     const row = page.getByRole('button', { name: /^Has a ceiling/ })
     await expect(row).toHaveAttribute('aria-expanded', 'false')
     await expect(page.getByText('a five-clip edit costs five sources')).toHaveCount(0)
 
-    // ...and one click reveals it. Nothing was deleted when the box shrank, and
-    // nothing was deleted when it moved off the front door either.
     await row.click()
     await expect(row).toHaveAttribute('aria-expanded', 'true')
     await expect(page.getByText('a five-clip edit costs five sources')).toBeVisible()
 
     // Rows are independent — opening one does not open or close the others.
-    const other = page.getByRole('button', { name: /^Reads/ })
-    await expect(other).toHaveAttribute('aria-expanded', 'false')
+    await expect(page.getByRole('button', { name: /^Reads/ })).toHaveAttribute('aria-expanded', 'false')
 
-    await row.click()
-    await expect(row).toHaveAttribute('aria-expanded', 'false')
+    // "Open all" reaches every row, including any added later — the state is a
+    // default plus exceptions, so there is no list to keep in step.
+    const rows = page.locator('section li button[aria-expanded]')
+    await expect(rows).toHaveCount(10)
+    await page.getByRole('button', { name: 'Open all' }).click()
+    await expect(page.locator('section li button[aria-expanded="true"]')).toHaveCount(10)
+    await page.getByRole('button', { name: 'Close all' }).click()
+    await expect(page.locator('section li button[aria-expanded="true"]')).toHaveCount(0)
+  })
 
-    // Every row has to be openable, not just the one sampled above.
-    const rows = page.locator('section:has(h2) li button[aria-expanded]')
-    await expect(rows).toHaveCount(9)
+  test('the more-info page is reachable by URL, and the back button returns', async ({ page }) => {
+    // A real path, not a hash: `public/_redirects` serves the shell for
+    // anything under /video/, so the page is linkable and crawlable. Somebody
+    // arriving here cold must get the page and not the editor.
+    await page.goto('/more-info')
+    await expect(page.getByRole('heading', { name: 'More about Universal Video' })).toBeVisible()
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(0)
+
+    await page.getByRole('link', { name: /Back to the editor/ }).first().click()
+    await expect(page.getByRole('button', { name: /Drop a video here/ }).first()).toBeVisible()
+
+    // The back button is why this is a page rather than a dialog.
+    await page.goBack()
+    await expect(page.getByRole('heading', { name: 'More about Universal Video' })).toBeVisible()
   })
 
   test('the columns stack ring-first on a phone', async ({ browser }) => {
@@ -597,7 +662,7 @@ test.describe('Universal Video', () => {
 
     // ── Cut at the playhead ────────────────────────────────────────────────
     await page.getByLabel('Playhead').fill('1')
-    await page.getByRole('button', { name: 'Cut at playhead' }).click()
+    await page.getByRole('button', { name: /^Cut at / }).click()
     await expect(page.locator('[data-testid=clip]')).toHaveCount(2)
 
     const [left, right] = await clips(page)
@@ -647,6 +712,42 @@ test.describe('Universal Video', () => {
     await secondClip.click()
     await page.getByRole('button', { name: 'Delete clip' }).click()
     await expect(page.locator('[data-testid=clip]')).toHaveCount(1)
+  })
+
+  test('a clip dragged a few pixels off its neighbour snaps flush instead of stacking', async ({ page }) => {
+    // The magnet, in a real browser. Missing a butt-join by two pixels is not a
+    // near miss in this editor: a same-track overlap is resolved by moving the
+    // clip to a NEW TRACK, so the punishment for imprecision is a second video
+    // track and two clips playing at once.
+    await page.goto('/')
+    await drop(page, 'clip.mp4', FIXTURE_BYTES)
+    await page.getByLabel('Playhead').fill('1')
+    await page.getByRole('button', { name: /^Cut at / }).click()
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(2)
+
+    const before = await clips(page)
+    const joinAt = before[1].start
+
+    const second = page.locator('[data-testid=clip]').nth(1)
+    await second.scrollIntoViewIfNeeded()
+    const box = (await second.boundingBox())!
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    // A few pixels — inside the 8px magnet, and exactly the kind of miss a
+    // hand makes.
+    await page.mouse.move(box.x + box.width / 2 - 5, box.y + box.height / 2, { steps: 4 })
+
+    // It says so while it is holding, rather than silently correcting on drop.
+    await expect(page.locator('[data-testid=snap-guide]')).toBeVisible()
+    await page.mouse.up()
+
+    const after = await clips(page)
+    expect(after).toHaveLength(2)
+    // Flush, exactly where it was — and still one row of clips.
+    expect(after[1].start).toBeCloseTo(joinAt, 3)
+    expect(after[0].end).toBeCloseTo(after[1].start, 3)
+    expect(after.every((c) => c.track === 0)).toBe(true)
+    await expect(page.locator('[data-testid=snap-guide]')).toHaveCount(0)
   })
 
   test('the timeline lines up with the scrub bar, and the needle with the knob', async ({ page }) => {
@@ -903,7 +1004,7 @@ test.describe('Universal Video', () => {
     await page.goto('/')
     await drop(page, 'clip.mp4', FIXTURE_BYTES)
     await page.getByLabel('Playhead').fill('1')
-    await page.getByRole('button', { name: 'Cut at playhead' }).click()
+    await page.getByRole('button', { name: /^Cut at / }).click()
     await expect(page.locator('[data-testid=clip]')).toHaveCount(2)
 
     await page.getByRole('button', { name: /Export this edit/ }).click()
@@ -1124,7 +1225,7 @@ test.describe('Universal Video', () => {
     await page.goto('/')
     await drop(page, 'clip.mp4', FIXTURE_BYTES)
     await page.getByLabel('Playhead').fill('1')
-    await page.getByRole('button', { name: 'Cut at playhead' }).click()
+    await page.getByRole('button', { name: /^Cut at / }).click()
     await expect(page.locator('[data-testid=clip]')).toHaveCount(2)
 
     // The whole UI of the feature: one pill. Its label counts the pieces.

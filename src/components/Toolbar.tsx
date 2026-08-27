@@ -1,5 +1,6 @@
 import { useFileDrop } from '@unisim/sdk'
 import { clipsAt } from '../lib/edit'
+import { timecode } from '../lib/timecode'
 import { FIT, ZOOM_STEP } from '../lib/zoom'
 import { EDITOR_ACCEPT, selectMaxZoom, useEditorStore, type Placement } from '../stores/editorStore'
 
@@ -41,8 +42,32 @@ export default function Toolbar() {
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900">
-      <Action onClick={cut} disabled={busy || underPlayhead === 0} title="Split every clip under the playhead">
-        Cut at playhead
+      {/* The button names the INSTANT it will cut at, not the control that
+          decides it (owner, 2026-08-27). "Cut at playhead" described the
+          mechanism to someone who already knew where their playhead was;
+          "Cut at 0:12.4" is a readout of what pressing it does, so the number
+          on the button and the needle on the timeline can be checked against
+          each other before committing to a split.
+
+          `timecode()` and not `formatDuration()`: one decimal place, because a
+          readout that cannot tell 12.0 from 12.4 cannot be used to place a cut,
+          which is the one thing this readout is for.
+
+          The accessible name changes with the playhead, which is right — it is
+          what the button will do — but it means every locator has to match on
+          the prefix. `aria-keyshortcuts` carries the "c" that used to have
+          nowhere to be announced. */}
+      <Action
+        onClick={cut}
+        disabled={busy || underPlayhead === 0}
+        title={
+          underPlayhead === 0
+            ? 'Move the playhead over a clip to cut it'
+            : `Split every clip at ${timecode(playheadSec)}`
+        }
+        keyShortcut="c"
+      >
+        Cut at {timecode(playheadSec)}
       </Action>
       <Action onClick={removeSelected} disabled={busy || !selectedClipId}>
         Delete clip
@@ -112,6 +137,7 @@ function Action({
   disabled,
   title,
   label,
+  keyShortcut,
   children,
 }: {
   onClick: () => void
@@ -119,6 +145,8 @@ function Action({
   title?: string
   /** For the buttons whose face is a symbol — "−" is not a name a screen reader can read out. */
   label?: string
+  /** The key that does the same thing, announced rather than only documented. */
+  keyShortcut?: string
   children: React.ReactNode
 }) {
   return (
@@ -128,6 +156,7 @@ function Action({
       disabled={disabled}
       title={title}
       aria-label={label}
+      aria-keyshortcuts={keyShortcut}
       className="rounded-lg bg-slate-100 px-3 py-1.5 text-[12px] font-semibold text-slate-700 transition-colors hover:bg-slate-200 disabled:opacity-40 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
     >
       {children}

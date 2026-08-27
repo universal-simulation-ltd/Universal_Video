@@ -1,3 +1,4 @@
+import { hrefFor, navigate } from '../../lib/route'
 import { useEditorStore } from '../../stores/editorStore'
 import { useThemeStore, type ThemePref } from '../../stores/themeStore'
 
@@ -45,6 +46,18 @@ export default function AppMenu() {
           onClick={() => setPref(t.pref)}
         />
       ))}
+      <MenuLabel>About</MenuLabel>
+      {/* ⚠️ A LINK, not a button. This is the only way to the spec sheet now
+          that it is off the editor page, so it has to behave like a way to a
+          page: middle-click opens a tab, "copy link address" copies something
+          that works, and a crawler can follow it. `navigate()` intercepts the
+          ordinary click so the timeline survives the trip — see `lib/route.ts`. */}
+      <MenuLink
+        glyph="ℹ️"
+        label="More info"
+        href={hrefFor('more-info')}
+        onNavigate={() => navigate('more-info')}
+      />
     </>
   )
 }
@@ -63,6 +76,64 @@ function MenuLabel({ children }: { children: string }) {
     >
       {children}
     </div>
+  )
+}
+
+/**
+ * A menu row that is genuinely a link. Same face as `MenuRow`; different
+ * element, because the difference matters to the browser and to a crawler.
+ */
+function MenuLink({
+  glyph,
+  label,
+  href,
+  onNavigate,
+}: {
+  glyph: string
+  label: string
+  href: string
+  onNavigate: () => void
+}) {
+  return (
+    <a
+      role="menuitem"
+      href={href}
+      onClick={(e) => {
+        // A modified click is the user asking the BROWSER for something —
+        // a new tab, a new window. Leave those alone.
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+        e.preventDefault()
+        onNavigate()
+      }}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        width: '100%',
+        padding: '8px 14px',
+        fontSize: 13,
+        fontFamily: 'inherit',
+        textAlign: 'left',
+        textDecoration: 'none',
+        border: 0,
+        background: 'transparent',
+        color: REST_COLOR,
+        cursor: 'pointer',
+        boxSizing: 'border-box',
+        transition: 'background 120ms, color 120ms',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = TINT.bg
+        e.currentTarget.style.color = TINT.fg
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = 'transparent'
+        e.currentTarget.style.color = REST_COLOR
+      }}
+    >
+      <span aria-hidden>{glyph}</span>
+      <span style={{ flex: 1, minWidth: 0, fontWeight: 500, lineHeight: 1.3 }}>{label}</span>
+    </a>
   )
 }
 

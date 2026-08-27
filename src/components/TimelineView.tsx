@@ -8,8 +8,10 @@ import {
   type PointerEvent,
   type RefObject,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { clipDuration, clipSpan, timelineDuration, type Clip } from '@unisim/media'
 import { sourceById, trackCount } from '../lib/edit'
+import { snapStart, toleranceSecFor } from '../lib/snap'
 import { timecode } from '../lib/timecode'
 import { contentWidthFor } from '../lib/zoom'
 import { selectPxPerSec, useEditorStore } from '../stores/editorStore'
@@ -291,12 +293,15 @@ function ClipBlock({
   surfaceRef: RefObject<HTMLDivElement>
 }) {
   const timeline = useEditorStore((s) => s.timeline)
+  const playheadSec = useEditorStore((s) => s.playheadSec)
   const selected = useEditorStore((s) => s.selectedClipId === clip.id)
   const select = useEditorStore((s) => s.select)
   const drag = useEditorStore((s) => s.drag)
   const trim = useEditorStore((s) => s.trim)
   const [dragState, setDragState] = useState<DragState | null>(null)
   const [preview, setPreview] = useState<{ startSec: number; track: number } | null>(null)
+  // Where the magnet is holding, for the guide line. Null while free.
+  const [snappedAt, setSnappedAt] = useState<number | null>(null)
 
   const source = sourceById(timeline, clip.sourceId)
   const span = clipSpan(clip)
@@ -321,7 +326,17 @@ function ClipBlock({
       // so the arithmetic is inverted deliberately.
       const y = rect ? e.clientY - rect.top - RULER_H - 4 : 0
       const row = Math.max(0, Math.min(rows - 1, Math.floor(y / (TRACK_H + TRACK_GAP))))
-      setPreview({ startSec: Math.max(0, dragState.startSec + dx), track: rows - 1 - row })
+      // ⚠️ The magnet runs on the PREVIEW, not only on the drop. Snapping
+      // silently at the moment the pointer comes up would move the clip
+      // somewhere the user never saw it — the whole value of a magnet is that
+      // you watch it take hold and stop fighting for the last two pixels.
+      //
+      // Alt suspends it, which is the convention everywhere else and the only
+      // way to deliberately place a clip 40 ms off its neighbour.
+      const tolerance = e.altKey ? 0 : toleranceSecFor(pxPerSec)
+      const snap = snapStart(timeline, clip, dragState.startSec + dx, tolerance, playheadSec)
+      setPreview({ startSec: snap.startSec, track: rows - 1 - row })
+      setSnappedAt(snap.atSec)
       return
     }
     // Trimming is applied live: it is clamped and idempotent, so there is
@@ -330,11 +345,19 @@ function ClipBlock({
   }
 
   const onPointerUp = () => {
+    // The preview is already snapped, so this commits exactly what was on
+    // screen. Nothing re-snaps here — a second, differently-parameterised snap
+    // at drop time is how a clip lands somewhere the user did not see.
     if (dragState?.kind === 'move' && preview) drag(clip.id, preview.startSec, preview.track)
     setDragState(null)
     setPreview(null)
+    setSnappedAt(null)
   }
 
+  // ⚠️ Arrow keys are deliberately NOT snapped. They are the fine-placement
+  // tool — the way OUT of a magnet — and a 0.1 s step that sometimes moves a
+  // clip 0.4 s because something was in reach is a control that cannot be
+  // predicted. Drag to snap, nudge to place exactly.
   const nudge = (e: KeyboardEvent) => {
     const step = e.shiftKey ? 1 : 0.1
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
@@ -350,6 +373,23 @@ function ClipBlock({
   const name = source?.name ?? 'clip'
 
   return (
+    <>
+      {/* The guide is PORTALLED into the timeline surface, because it has to
+          span every track and this component is nested inside one of them. The
+          surface is `position: relative`, which is what `Playhead` relies on
+          too — the line is drawn the same way, in the same box. */}
+      {snappedAt !== null &&
+        surfaceRef.current &&
+        createPortal(
+          <div
+            data-testid="snap-guide"
+            data-at={snappedAt.toFixed(3)}
+            aria-hidden
+            className="pointer-events-none absolute top-0 z-20 w-px bg-orange-500"
+            style={{ left: snappedAt * pxPerSec, height: rows * (TRACK_H + TRACK_GAP) + RULER_H + 4 }}
+          />,
+          surfaceRef.current,
+        )}
     <div
       data-testid="clip"
       data-clip-id={clip.id}
@@ -411,6 +451,7 @@ function ClipBlock({
       <Handle side="in" label={`Trim the start of ${name}`} onPointerDown={onPointerDown('in')} />
       <Handle side="out" label={`Trim the end of ${name}`} onPointerDown={onPointerDown('out')} />
     </div>
+    </>
   )
 }
 

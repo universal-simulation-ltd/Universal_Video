@@ -57,6 +57,7 @@ drag and one click. What has **not** changed is everything below.
 | **Read fragmented MP4** | ❌ Not yet. Common from screen recorders and some phone apps, so the refusal fires more often than its rarity suggests. It is detected on drop and named, not parsed half-way. |
 | **Write WebM / VP9** | ❌ Not yet — and this is the highest-value gap, because it is also what would make **Firefox** a supported browser. WebCodecs already has the VP9 encoder; only the container is missing. |
 | **Split into separate files** | ✅ Every cut on the timeline can come out as its own MP4, delivered as one `.zip` — see [Separate files](#separate-files-one-timeline-n-mp4s) below. One pill in the export panel; no split-point editor, because the cuts already on the timeline **are** the pieces. Refused (with the reason, and the fix) on a timeline that isn't a plain row of cuts: a stacked clip or a crossfade belongs to two pieces at once. |
+| **Snap clips together** | ✅ Dragging a clip magnets its head *and* its tail to neighbouring clip edges, the playhead and the start of the movie, within 8 px on screen — so the tolerance feels the same at every zoom. A guide line shows where it has taken hold; **Alt** suspends it; arrow keys are never snapped, because they are the way to place a clip exactly. This is not a nicety: a same-track overlap is resolved by moving the clip to a **new track**, so missing a butt-join by two pixels used to cost you a second video track. |
 | **Edit** | ✅ Trim, cut at the playhead, delete, slide clips along and between tracks, stack them (two clips slid over each other add a track rather than overwriting), intro/outro cards from an image or a video, and crossfade / fade-to-black between clips. **A clip carries its own audio**, so a cut splits picture and sound at the same instant by construction — see [`timeline.ts`](https://github.com/universal-simulation-ltd/universal-platform/blob/main/packages/media/src/timeline.ts), the contract this editor and the renderer share. |
 | **Reframe** | ✅ The output frame is chosen, not inherited: match the source (the default), 1920×1080, 1080×1920, 1080×1080, or a size you type. A source of a different shape is **centred and the rest filled black** — *contain*, never *cover*, so nothing is ever cropped away. Both edges are forced even (H.264 codes in 16×16 macroblocks and the renderer refuses an odd one up front). The preview canvas is the output frame and letterboxes through the same `fitInside()` maths, so what you see while editing is what comes out. An **upright** frame is capped at 540 px tall in the viewer (`src/lib/layout.ts`) instead of drawing ~1280 px and pushing the timeline off the screen — and the timeline narrows with it, because the needle is placed as a fraction of that width. |
 | **Crop, zoom-to-fill, per-clip position** | ❌ No. Reframing is letterbox/pillarbox only. A fill mode would silently throw away picture that is visible in the preview; black bars are visible and fixable, a missing head is neither. |
@@ -72,7 +73,7 @@ each piece separately, as a zip."*
 
 **Almost none of it was new work, and the design is why.** `cutAt()` already
 turned one clip into several and the timeline already drew them, so "multiple
-cut points" needed no marking UI at all — pressing **Cut at playhead** a few
+cut points" needed no marking UI at all — pressing **Cut at 0:12.4** a few
 times is the feature's input. What was missing was one sentence of intent on the
 way out: *don't join these back together.* So the whole of it in the UI is two
 pills at the top of the export panel:
@@ -158,6 +159,24 @@ So the app **refuses before, rather than crashing after**:
 This matters because the failure mode is **tab death**: an out-of-memory kill
 fires no `onerror`, rejects no promise, and gives you nothing to catch. There is
 no recovery path, so the pre-flight refusal is the *only* defence there is.
+
+## Two pages
+
+The editor is at `/video/`, and the spec sheet — *what it does, and what it
+deliberately doesn't* — is at **`/video/more-info`**, reached from the actions
+dropdown. It used to sit under the timeline, where ten facts about what the app
+cannot do were the last thing on a screen somebody had come to cut a video on.
+
+There is no router. `public/_redirects` already serves the shell for anything
+under `/video/`, so [`lib/route.ts`](src/lib/route.ts) is a path check and a
+`pushState` — which is what makes the page linkable, crawlable and
+back-buttonable where a modal would not be.
+
+⚠️ **Navigating there must never reload the tab.** The sources on the timeline
+are `File` handles held in this tab and there is nowhere else they could come
+from, so a full navigation would silently destroy somebody's edit for the crime
+of reading the small print. The links carry a real `href` (for middle-click and
+for crawlers) whose ordinary click is intercepted.
 
 ## Develop
 

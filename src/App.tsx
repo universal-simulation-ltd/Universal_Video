@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { DropRing, UniversalAppsNavBar, UpdateNotice } from '@unisim/sdk'
 import UsageTracker from './UsageTracker'
 import AppMenu from './components/Header/AppMenu'
@@ -12,7 +12,8 @@ import Inspector from './components/Inspector'
 import ExportPanel from './components/ExportPanel'
 import Progress from './components/Progress'
 import ResultCard from './components/ResultCard'
-import Honesty from './components/Honesty'
+import MoreInfo from './components/MoreInfo'
+import { NAVIGATED, currentRoute, type Route } from './lib/route'
 import { useEditorStore } from './stores/editorStore'
 
 // The single page container. The navbar (via the SDK's `contentClassName`), the
@@ -63,7 +64,29 @@ function Reading({ show }: { show: boolean }) {
   )
 }
 
+/**
+ * The app's two pages.
+ *
+ * `popstate` covers the back and forward buttons; `NAVIGATED` covers our own
+ * `pushState`, which does not fire `popstate` — miss either one and the URL and
+ * the screen disagree, which is worse than having no routing at all.
+ */
+function useRoute(): Route {
+  const [route, setRoute] = useState<Route>(() => currentRoute())
+  useEffect(() => {
+    const sync = () => setRoute(currentRoute())
+    window.addEventListener('popstate', sync)
+    window.addEventListener(NAVIGATED, sync)
+    return () => {
+      window.removeEventListener('popstate', sync)
+      window.removeEventListener(NAVIGATED, sync)
+    }
+  }, [])
+  return route
+}
+
 export default function App() {
+  const route = useRoute()
   const status = useEditorStore((s) => s.status)
   const error = useEditorStore((s) => s.error)
   const clips = useEditorStore((s) => s.timeline.clips.length)
@@ -83,6 +106,10 @@ export default function App() {
   // a field, or typing "3" into the out-point box would delete a clip.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      // Not while reading the spec sheet: space is "scroll down" on a page of
+      // prose, and a hidden editor quietly toggling playback under it is a
+      // sound with no visible cause.
+      if (route !== 'editor') return
       const el = e.target as HTMLElement | null
       if (el && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) return
       if (e.key === 'c' || e.key === 'C') cut()
@@ -94,7 +121,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [cut, removeSelected, setPlaying, playing])
+  }, [cut, removeSelected, setPlaying, playing, route])
 
   const editing = clips > 0
 
@@ -145,8 +172,18 @@ export default function App() {
           top of a tall screen it sits in a pool of empty page. The editor is
           not — it is taller than the viewport and starts at the top. */}
       <main
-        className={`${CONTAINER} flex-1 py-8 ${editing ? '' : 'flex flex-col justify-center'}`}
+        className={`${CONTAINER} flex-1 py-8 ${editing && route === 'editor' ? '' : 'flex flex-col justify-center'}`}
       >
+        {/* ⚠️ The editor is UNMOUNTED on the info page, and that is safe only
+            because the timeline lives in the store rather than in component
+            state — the `File` handles and object URLs are held by
+            `editorStore`, so coming back finds the edit exactly as it was. If
+            anything about the edit ever moves into a component, this becomes a
+            silent way to lose somebody's work. */}
+        {route === 'more-info' ? (
+          <MoreInfo />
+        ) : (
+        <>
         {/* The headline sits in the front door's right-hand column while there
             is a front door, and only comes back out to full width once the
             editor is on screen — where there is no column to put it in. It is
@@ -196,10 +233,11 @@ export default function App() {
                   {status === 'exporting' ? <Progress /> : status === 'done' ? <ResultCard /> : <ExportPanel />}
                 </div>
               </div>
-              <Honesty />
             </>
           )}
         </div>
+        </>
+        )}
       </main>
 
       <footer className="border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">

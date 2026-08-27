@@ -1,9 +1,17 @@
-import { useId, useState } from 'react'
+import { createContext, useContext, useId, useMemo, useState } from 'react'
 import { summarise } from '../lib/summary'
 
-// What this app deliberately cannot do, on the page rather than only in the
+// What this app deliberately cannot do, on the site rather than only in the
 // README. Every row is either a browser limit or a decision, and each one has a
 // reason a user can check.
+//
+// ⚠️ **This no longer renders on the editor page** (owner, 2026-08-27). It sat
+// under the timeline, where ten facts about what the app *cannot* do were the
+// last thing on screen after a working editor — and where nobody editing a
+// video was reading them. It lives on `/more-info` now, reached from the
+// actions dropdown, which is also why the rows can be opened all at once: on a
+// page of its own there is room to read, and a reader who navigated HERE wants
+// the detail rather than a scannable column.
 //
 // ⚠️ The rule this list used to be drawn from — "one input, one output, no time
 // axis; a feature needing a second input is an editor and this is not one" — is
@@ -35,29 +43,81 @@ import { summarise } from '../lib/summary'
 // A disclosure needs a `<button>` next to the term, and inside a `<dl>` the
 // only permitted children are `<dt>`, `<dd>` and a `<div>` wrapping them — a
 // button is not valid there. It is a `<ul>` of ten facts instead.
+/**
+ * Whether a row is open, held for all of them at once so "Open all" can exist.
+ *
+ * ⚠️ It is a DEFAULT plus a set of exceptions, not a list of open rows, and
+ * that is deliberate: a list would have to be kept in step with the ten `<Row>`
+ * elements below by hand, and the failure mode of that drifting is an "Open
+ * all" that silently misses a row somebody later added. `openByDefault XOR
+ * flipped.has(term)` needs no list at all, so there is nothing to keep in step.
+ */
+interface RowState {
+  isOpen(term: string): boolean
+  toggle(term: string): void
+}
+
+const Rows = createContext<RowState | null>(null)
+
 export default function Honesty() {
+  const [openByDefault, setOpenByDefault] = useState(false)
+  const [flipped, setFlipped] = useState<ReadonlySet<string>>(new Set())
+
+  const state = useMemo<RowState>(
+    () => ({
+      isOpen: (term) => openByDefault !== flipped.has(term),
+      toggle: (term) =>
+        setFlipped((current) => {
+          const next = new Set(current)
+          if (!next.delete(term)) next.add(term)
+          return next
+        }),
+    }),
+    [openByDefault, flipped],
+  )
+
+  const setAll = (open: boolean) => {
+    setOpenByDefault(open)
+    setFlipped(new Set())
+  }
+
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 text-[12.5px] leading-relaxed dark:border-slate-800 dark:bg-slate-900">
-      <h2 className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">
-        What it does, and what it deliberately doesn’t
-      </h2>
-      <p className="mt-1 text-[11.5px] text-slate-500 dark:text-slate-500">
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 text-[13px] leading-relaxed dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h2 className="text-[15px] font-semibold text-slate-900 dark:text-slate-100">
+          What it does, and what it deliberately doesn’t
+        </h2>
+        <button
+          type="button"
+          onClick={() => setAll(!openByDefault)}
+          className="rounded text-[12px] font-semibold text-orange-700 underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 dark:text-orange-400"
+        >
+          {openByDefault ? 'Close all' : 'Open all'}
+        </button>
+      </div>
+      <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-500">
         Ten straight answers. Open one for the reasoning.
       </p>
 
+      <Rows.Provider value={state}>
       <ul className="mt-3 divide-y divide-slate-100 dark:divide-slate-800">
         {/* Edits and Reframes lead, because they are what the app is for — the
             formats it reads and writes matter, but they are the small print of
             a tool, not its purpose (owner, 2026-08-13). */}
         <Row
           term="Edits"
-          summary="A timeline: trim, cut, slide, stack tracks, intro and outro cards, crossfades."
+          summary="A timeline: trim, cut, slide, snap, stack tracks, intro and outro cards, crossfades."
         >
           A timeline: trim either end of a clip, cut at the playhead, delete,
           slide clips around, stack them on more than one track, put an image or
           a video on the front or the end, and crossfade or fade to black
           between them. A clip carries its own sound, so cutting the picture
-          cuts the sound at the same instant — they cannot come apart.
+          cuts the sound at the same instant — they cannot come apart. Dragging
+          a clip <strong className="font-semibold">snaps</strong> it to the
+          clips beside it, to the playhead and to the start of the movie, so two
+          clips join cleanly instead of overlapping by a pixel; hold{' '}
+          <kbd className="rounded border border-slate-300 px-1 text-[11px] dark:border-slate-600">Alt</kbd>{' '}
+          to place one freely, or use the arrow keys, which never snap.
         </Row>
 
         <Row
@@ -163,6 +223,7 @@ export default function Honesty() {
           probed before anything runs.
         </Row>
       </ul>
+      </Rows.Provider>
     </section>
   )
 }
@@ -176,7 +237,10 @@ function Row({
   summary: string
   children: React.ReactNode
 }) {
-  const [open, setOpen] = useState(false)
+  // Read from the provider rather than taken as props, so the ten call sites
+  // below did not each have to grow two more attributes to gain "Open all".
+  const rows = useContext(Rows)
+  const open = rows?.isOpen(term) ?? false
   const line = summarise(summary)
   const panelId = useId()
 
@@ -184,7 +248,7 @@ function Row({
     <li className="py-2 first:pt-0 last:pb-0">
       <button
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={() => rows?.toggle(term)}
         aria-expanded={open}
         aria-controls={panelId}
         className="group flex w-full items-start gap-2 rounded text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600"

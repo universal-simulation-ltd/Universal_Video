@@ -68,7 +68,7 @@ export function separateBlocked(timeline: Timeline): string | null {
   if (clips.length === 0) return 'There is nothing on the timeline to export yet.'
 
   if (clips.length === 1) {
-    return 'Nothing is cut yet — put the playhead where you want a split and press “Cut at playhead”. Every piece you cut becomes its own file.'
+    return 'Nothing is cut yet — move the playhead to where you want a split and press the Cut button beside it. Every piece you cut becomes its own file.'
   }
 
   if (clips.some((c) => c.track !== 0)) {
