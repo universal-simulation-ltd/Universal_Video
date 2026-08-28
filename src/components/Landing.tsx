@@ -363,6 +363,7 @@ export default function Landing() {
           className="mt-4"
           theme={theme}
           repo="https://github.com/universal-simulation-ltd/Universal_Video"
+          proof="https://github.com/universal-simulation-ltd/Universal_Video/blob/main/PRIVACY.md"
           subject="Your video"
         />
       </div>
