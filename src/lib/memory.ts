@@ -13,6 +13,21 @@
  * The budget, the frame-size maths and the bitrate table all come from the
  * package rather than being re-derived here: this file only changes what goes
  * into the sum.
+ *
+ * ── The destination is part of the sum ───────────────────────────────────────
+ *
+ * Since the separate-files batch learned to write straight into a file the user
+ * picks (`openZip` in `@unisim/media`, driven by `lib/zipTarget.ts`), the
+ * arithmetic below has TWO answers and the difference is the whole point of
+ * that work. Holding the archive in the tab costs `sources + 2 × Σ pieces`;
+ * streaming it costs `sources + 2 × the LARGEST piece`, because each one is
+ * handed to the file and released before the next starts. On a long edit cut
+ * into twenty that is the difference between a refusal and an export.
+ *
+ * ⚠️ The plan therefore cannot be computed without knowing where the bytes are
+ * going. `destination` is not decoration — a plan that assumed `'memory'` on a
+ * browser that streams would refuse exports that work, and one that assumed
+ * `'stream'` on Safari would promise an export that kills the tab.
  */
 
 import {
@@ -37,6 +52,15 @@ import { segmentsOf, type ExportMode } from './segments'
 const TIGHT_AT = 0.6
 const ALTERNATIVE_AT = 0.9
 
+/**
+ * Where a separate-files archive is being written.
+ *
+ * `'memory'` is every browser and the only answer for a joined movie — the zip
+ * is assembled in the tab and downloaded. `'stream'` means the user has a File
+ * System Access handle open and each piece goes into it as it finishes.
+ */
+export type ZipDestination = 'memory' | 'stream'
+
 export interface TimelinePlanAlternative {
   settings: VideoSettings
   estimate: OutputEstimate
@@ -51,6 +75,18 @@ export interface TimelinePlan {
   fileCount: number
   /** Bytes of source files held resident while the export runs. */
   sourceBytes: number
+  /**
+   * Where this plan assumes the archive goes. Always `'memory'` for a joined
+   * movie — there is no archive — and for a batch on a browser without the
+   * File System Access API.
+   */
+  destination: ZipDestination
+  /**
+   * The single biggest thing in memory at once besides the sources: the whole
+   * output when it is held in the tab, the largest piece when it is streamed.
+   * This is the term `peakBytes` doubles.
+   */
+  residentOutputBytes: number
   peakBytes: number
   budget: MemoryBudget
   verdict: Verdict
@@ -112,16 +148,16 @@ export function estimateTimelineOutput(
 }
 
 /**
- * Every source is resident at once, plus two copies of the output being
+ * Every source is resident at once, plus two copies of the biggest output being
  * assembled.
  *
- * ── Why separate files need no different sum ──────────────────────────────────
+ * ── Why an in-tab zip needs no different sum ─────────────────────────────────
  *
  * It looks at first as though a zip should be cheaper: only one piece is being
- * encoded at a time, so the biggest single output is small. It is not, and the
- * arithmetic is worth writing down because the pre-flight refusal is the ONLY
- * defence against tab death and a formula that is optimistic here would be
- * worse than no formula at all.
+ * encoded at a time, so the biggest single output is small. Held in the tab it
+ * is not, and the arithmetic is worth writing down because the pre-flight
+ * refusal is the ONLY defence against tab death and a formula that is
+ * optimistic here would be worse than no formula at all.
  *
  *   While piece k is encoding:   sources + Σ(pieces already finished) + 2 × piece k
  *   While the zip is written:    sources + Σ(all pieces) + Σ(all pieces again)
@@ -132,11 +168,49 @@ export function estimateTimelineOutput(
  * the joined export, and it dominates the first line (at the last piece the
  * first line is `sources + Σ + last`, which cannot exceed `sources + 2 × Σ`).
  *
- * So: one formula, both modes, and the ceiling does not move when you tick
- * "separate files". What changes is only what goes INTO `estimate.bytes`.
+ * ── And why streaming it needs a different one ───────────────────────────────
+ *
+ * Both lines above exist only because the finished pieces have nowhere to go.
+ * Given a file handle they do: `openZip()` takes each piece, writes it, and the
+ * caller drops it, so nothing accumulates and there is never a second copy of
+ * the whole archive.
+ *
+ *   While piece k is encoding:   sources + 2 × piece k   (+ one 4 MiB chunk)
+ *
+ * The worst k is the longest piece, so `residentOutput` is that one piece
+ * rather than the sum — which is why the same twenty-piece edit can be refused
+ * on Safari and export on Chrome. The chunk the zip writer holds is a rounding
+ * error against a video frame buffer and is not modelled.
  */
-export function peakBytesForTimeline(sourceBytes: number, estimate: OutputEstimate): number {
-  return sourceBytes + estimate.bytes * 2
+export function peakBytesForTimeline(
+  sourceBytes: number,
+  estimate: OutputEstimate,
+  /**
+   * The largest single output resident at once. Omit for the in-tab paths,
+   * where that is the whole of `estimate.bytes`.
+   */
+  residentOutputBytes: number = estimate.bytes,
+): number {
+  return sourceBytes + residentOutputBytes * 2
+}
+
+/**
+ * The biggest single piece a streamed batch ever holds.
+ *
+ * Every piece is encoded at the same frame, rate and quality, so bytes are
+ * proportional to seconds and the longest piece is the heaviest — no need to
+ * re-run the bitrate table per piece. The per-file overhead `estimate.bytes`
+ * carries for the OTHER pieces is left in, which makes this a hair
+ * conservative, and conservative is the right direction for a refusal.
+ *
+ * Falls back to the whole estimate when there are no pieces to speak of, so a
+ * caller that gets this wrong is refused rather than over-promised.
+ */
+export function largestPieceBytes(timeline: Timeline, estimate: OutputEstimate): number {
+  const pieces = segmentsOf(timeline)
+  if (pieces.length === 0 || estimate.seconds <= 0) return estimate.bytes
+  const longest = pieces.reduce((most, piece) => Math.max(most, piece.durationSec), 0)
+  return Math.round((estimate.bytes / estimate.seconds) * longest)
 }
 
 export function planTimelineExport(
@@ -145,22 +219,47 @@ export function planTimelineExport(
   settings: VideoSettings,
   mode: ExportMode = 'one',
   budget: MemoryBudget = memoryBudget(),
+  /**
+   * Last, and defaulted, so every existing call still means what it did. Only
+   * a separate-files batch on a browser with `showSaveFilePicker()` passes
+   * `'stream'` — see `lib/zipTarget.ts` for who decides.
+   */
+  destination: ZipDestination = 'memory',
 ): TimelinePlan {
   const estimate = estimateTimelineOutput(timeline, settings, mode)
-  const fileCount = mode === 'separate' ? Math.max(1, segmentsOf(timeline).length) : 1
-  const peak = peakBytesForTimeline(sourceBytes, estimate)
+  const pieces = mode === 'separate' ? segmentsOf(timeline) : []
+  const fileCount = mode === 'separate' ? Math.max(1, pieces.length) : 1
+  // ⚠️ Streaming only changes the sum for a batch of MORE THAN ONE piece. One
+  // piece IS the whole archive, so there is nothing to release and the two
+  // destinations cost exactly the same — claiming otherwise would under-count.
+  const streamed = destination === 'stream' && mode === 'separate' && fileCount > 1
+  const residentOutput = streamed ? largestPieceBytes(timeline, estimate) : estimate.bytes
+  const peak = peakBytesForTimeline(sourceBytes, estimate, residentOutput)
   const share = peak / budget.totalBytes
   const verdict: Verdict = share > 1 ? 'refuse' : share > TIGHT_AT ? 'tight' : 'ok'
   const headline =
     `About ${formatBytes(estimate.bytes)} · ${estimate.width}×${estimate.height} · ` +
     formatDuration(estimate.seconds)
-  const base = { estimate, mode, fileCount, sourceBytes, peakBytes: peak, budget }
+  const base = {
+    estimate,
+    mode,
+    fileCount,
+    sourceBytes,
+    destination: streamed ? ('stream' as const) : ('memory' as const),
+    residentOutputBytes: residentOutput,
+    peakBytes: peak,
+    budget,
+  }
   // The one thing separate files change about the REFUSAL: it is not obvious
-  // that a zip costs the same as one movie (a reader who has just been told
-  // "one piece at a time" will assume it costs less), so the sentence says
-  // where the bytes are. See `peakBytesForTimeline` for the arithmetic.
-  const because =
-    mode === 'separate' && fileCount > 1
+  // that an in-tab zip costs the same as one movie (a reader who has just been
+  // told "one piece at a time" will assume it costs less), so the sentence says
+  // where the bytes are. Streamed, the intuition is finally correct and the
+  // sentence says THAT instead — because a reader told the pieces go straight
+  // into a file and then refused on their total would rightly not believe it.
+  // See `peakBytesForTimeline` for both.
+  const because = streamed
+    ? `each piece goes into your file and is let go, so what binds is the longest single piece — about ${formatBytes(residentOutput)} of the ${formatBytes(estimate.bytes)} total`
+    : mode === 'separate' && fileCount > 1
       ? `the zip holds all ${fileCount} finished pieces at once, so what binds is still their total`
       : 'the clips on the timeline stay in memory while it renders'
 
@@ -168,7 +267,7 @@ export function planTimelineExport(
     return { ...base, verdict, headline, detail: '', alternative: null }
   }
 
-  const alternative = findAlternative(timeline, sourceBytes, settings, mode, budget)
+  const alternative = findAlternative(timeline, sourceBytes, settings, mode, budget, destination)
 
   if (verdict === 'tight') {
     return {
@@ -196,9 +295,15 @@ export function planTimelineExport(
   const cantHold = asZip
     ? `which this browser can't hold at once — ${because}`
     : `which this browser can't hold in one piece`
-  const lastResort = asZip
-    ? 'Take some clips off the timeline and export the rest in a second batch.'
-    : 'Export it in shorter pieces.'
+  // ⚠️ "Export the rest in a second batch" is the wrong advice once the pieces
+  // are being streamed: splitting the batch does not lower the peak, because
+  // the peak is ONE piece either way. The only thing that helps then is a
+  // shorter longest piece — another cut through it.
+  const lastResort = streamed
+    ? 'Cutting the longest piece in two is what brings this down — the batch can be any length, but no single piece can be.'
+    : asZip
+      ? 'Take some clips off the timeline and export the rest in a second batch.'
+      : 'Export it in shorter pieces.'
   const detail = sourcesAlone
     ? `The clips on this timeline are ${formatBytes(sourceBytes)} of source between them, and every one has to be read into memory before its frames can be found — which is more than this device will hold. No output setting can fix that: take a clip off the timeline, or edit in shorter pieces.`
     : alternative
@@ -218,6 +323,7 @@ function findAlternative(
   settings: VideoSettings,
   mode: ExportMode,
   budget: MemoryBudget,
+  destination: ZipDestination,
 ): TimelinePlanAlternative | null {
   const currentIndex = MAX_HEIGHTS.indexOf(settings.maxHeight)
   const heights = MAX_HEIGHTS.slice(currentIndex < 0 ? 0 : currentIndex + 1)
@@ -225,7 +331,14 @@ function findAlternative(
     for (const quality of qualitiesFrom(settings.quality)) {
       const candidate: VideoSettings = { ...settings, maxHeight, quality }
       const estimate = estimateTimelineOutput(timeline, candidate, mode)
-      if (peakBytesForTimeline(sourceBytes, estimate) <= budget.totalBytes * ALTERNATIVE_AT) {
+      // ⚠️ The candidate has to be measured the way the real export will be
+      // measured. Sizing a smaller setting against the in-tab sum while the
+      // export streams would offer 480p to someone whose 1080p already fits.
+      const resident =
+        destination === 'stream' && mode === 'separate'
+          ? largestPieceBytes(timeline, estimate)
+          : estimate.bytes
+      if (peakBytesForTimeline(sourceBytes, estimate, resident) <= budget.totalBytes * ALTERNATIVE_AT) {
         return { settings: candidate, estimate, label: labelFor(maxHeight, quality) }
       }
     }

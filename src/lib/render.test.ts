@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Timeline } from '@unisim/media'
+import { DEFAULT_VIDEO_SETTINGS, type ConvertedFile, type Timeline } from '@unisim/media'
 import {
   addSource,
   appendClip,
@@ -12,7 +12,17 @@ import {
   trimClip,
 } from './edit'
 import { applyFrame } from './frame'
-import { exportName, exportRoute, exportTimeline, rendererAvailable, trimForClip } from './render'
+import {
+  exportName,
+  exportRoute,
+  exportTimeline,
+  rendererAvailable,
+  runSegments,
+  trimForClip,
+  type PieceSink,
+  type SegmentProgress,
+} from './render'
+import { cutAt } from './edit'
 
 function oneVideo(durationSec = 10): Timeline {
   let tl = emptyTimeline()
@@ -150,3 +160,159 @@ function nullSettings() {
     trim: { enabled: false, startSec: 0, endSec: null },
   }
 }
+
+/* ── The batch, and what survives a failure half-way through ─────────────────
+ *
+ * There is no WebCodecs under vitest, so the encoder is stubbed through
+ * `runSegments`' `encodePiece` seam. That is not a gap in the coverage: the
+ * encoding is `exportTimeline`'s job and is proved in the Playwright specs
+ * against real MP4s. What is proved HERE is the part those specs cannot force —
+ * what happens when piece three of five does not come back.
+ *
+ * The old behaviour was to throw, which discarded the two finished pieces along
+ * with it. Getting that right is entirely bookkeeping, and bookkeeping is
+ * exactly what a unit test is for.
+ */
+describe('writing a batch of separate files', () => {
+  /** A 100 s video cut into `pieces` equal parts. */
+  function cutInto(pieces: number): Timeline {
+    let tl = oneVideo(100)
+    for (let i = 1; i < pieces; i += 1) tl = cutAt(tl, (100 / pieces) * i)
+    return tl
+  }
+
+  /** An encoder that hands back a blob of `bytes`, failing on the named piece. */
+  function fakeEncoder(options: { failAt?: number; bytes?: number } = {}) {
+    let call = 0
+    return async (): Promise<ConvertedFile> => {
+      call += 1
+      if (call === options.failAt) throw new Error('a frame would not decode')
+      return { blob: new Blob([new Uint8Array(options.bytes ?? 128)]), name: 'ignored.mp4' }
+    }
+  }
+
+  /** A sink that records what it was given, the way the in-tab path does. */
+  function recordingSink() {
+    const taken: { name: string; bytes: number }[] = []
+    const sink: PieceSink = {
+      accept: async (file) => void taken.push({ name: file.name, bytes: file.blob.size }),
+    }
+    return { sink, taken }
+  }
+
+  it('writes every piece, in order, under the segment’s own name', async () => {
+    const { sink, taken } = recordingSink()
+    const outcome = await runSegments(
+      { timeline: cutInto(3), files: {}, settings: DEFAULT_VIDEO_SETTINGS },
+      sink,
+      { encodePiece: fakeEncoder() },
+    )
+    expect(outcome.failure).toBeNull()
+    expect(outcome.written).toHaveLength(3)
+    // ⚠️ The SEGMENT's name, not `exportName()`. Three files called
+    // `a-edit.mp4` is not a zip, and the sink is where that would go wrong.
+    expect(taken.map((t) => t.name)).toEqual(outcome.written.map((w) => w.name))
+    expect(taken[0].name).toMatch(/^1_a_00-00-00\.mp4$|^01_a_00-00-00\.mp4$/)
+  })
+
+  it('⚠️ keeps the pieces that finished when a later one fails', async () => {
+    // THE item. Two good encodes used to be thrown away because the third
+    // failed; they are files, and they are kept.
+    const { sink, taken } = recordingSink()
+    const outcome = await runSegments(
+      { timeline: cutInto(5), files: {}, settings: DEFAULT_VIDEO_SETTINGS },
+      sink,
+      { encodePiece: fakeEncoder({ failAt: 3 }) },
+    )
+    expect(outcome.written).toHaveLength(2)
+    expect(taken).toHaveLength(2)
+    expect(outcome.failure?.piece.index).toBe(3)
+    expect(outcome.failure?.piece.total).toBe(5)
+    expect(outcome.failure?.reason).toBe('a frame would not decode')
+  })
+
+  it('names every piece that is missing, starting with the one that stopped it', async () => {
+    // A partial zip that does not say what is not in it is worse than no zip:
+    // it opens, two files are there, and nothing says a third was ever meant to
+    // exist. The names are the ones the pieces WOULD have had.
+    const { sink } = recordingSink()
+    const outcome = await runSegments(
+      { timeline: cutInto(5), files: {}, settings: DEFAULT_VIDEO_SETTINGS },
+      sink,
+      { encodePiece: fakeEncoder({ failAt: 3 }) },
+    )
+    expect(outcome.failure?.missing).toHaveLength(3)
+    expect(outcome.failure?.missing[0]).toContain('3_')
+    // And no name appears both as written and as missing.
+    const written = new Set(outcome.written.map((w) => w.name))
+    expect(outcome.failure?.missing.filter((m) => written.has(m))).toEqual([])
+  })
+
+  it('treats a sink that stops accepting as the same kind of failure as an encode', async () => {
+    // A file handle that dies mid-batch — the disk filled, the volume was
+    // ejected — needs the same answer as a bad frame: these pieces are written,
+    // these are not, and here is why. If the sink were outside the try it would
+    // reject the whole run instead and lose them.
+    const taken: string[] = []
+    const sink: PieceSink = {
+      accept: async (file) => {
+        if (taken.length === 2) throw new Error('no space left on the disk')
+        taken.push(file.name)
+      },
+    }
+    const outcome = await runSegments(
+      { timeline: cutInto(4), files: {}, settings: DEFAULT_VIDEO_SETTINGS },
+      sink,
+      { encodePiece: fakeEncoder() },
+    )
+    expect(outcome.written).toHaveLength(2)
+    expect(outcome.failure?.piece.index).toBe(3)
+    expect(outcome.failure?.reason).toBe('no space left on the disk')
+  })
+
+  it('reports nothing written when the very first piece fails', async () => {
+    // The one case that is still a plain error rather than a partial result:
+    // an archive of no files is not something to offer anybody.
+    const { sink } = recordingSink()
+    const outcome = await runSegments(
+      { timeline: cutInto(3), files: {}, settings: DEFAULT_VIDEO_SETTINGS },
+      sink,
+      { encodePiece: fakeEncoder({ failAt: 1 }) },
+    )
+    expect(outcome.written).toEqual([])
+    expect(outcome.failure?.missing).toHaveLength(3)
+  })
+
+  it('banks a piece only once it has been accepted, not once it has been encoded', async () => {
+    // The store adds these up for the progress readout and the overrun warning.
+    // Counting a piece the sink then refused would show bytes that are not in
+    // the archive.
+    const done: SegmentProgress[] = []
+    const sink: PieceSink = {
+      accept: async () => {
+        if (done.length === 1) throw new Error('the volume went away')
+      },
+    }
+    await runSegments({ timeline: cutInto(3), files: {}, settings: DEFAULT_VIDEO_SETTINGS }, sink, {
+      encodePiece: fakeEncoder({ bytes: 64 }),
+      onPieceDone: (piece) => void done.push(piece),
+    })
+    expect(done).toHaveLength(1)
+    expect(done[0].index).toBe(1)
+  })
+
+  it('refuses a timeline that cannot be split at all, before encoding anything', async () => {
+    // Not a batch that failed — a mistake to catch before the button. It throws,
+    // and it throws with the reason `separateBlocked` gives.
+    let encoded = 0
+    await expect(
+      runSegments({ timeline: oneVideo(10), files: {}, settings: DEFAULT_VIDEO_SETTINGS }, recordingSink().sink, {
+        encodePiece: async () => {
+          encoded += 1
+          return { blob: new Blob([]), name: 'x.mp4' }
+        },
+      }),
+    ).rejects.toThrow(/Nothing is cut yet/)
+    expect(encoded).toBe(0)
+  })
+})

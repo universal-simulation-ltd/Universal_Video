@@ -46,7 +46,20 @@ import {
 import { pictureWidth } from '../lib/layout'
 import { planTimelineExport, type TimelinePlan } from '../lib/memory'
 import { FALLBACK_VIEWPORT_PX, FIT, clampZoom, maxZoomFor, pxPerSecFor } from '../lib/zoom'
-import { exportRoute, exportSegments, exportTimeline, zipPieces } from '../lib/render'
+import {
+  exportRoute,
+  exportTimeline,
+  runSegments,
+  zipPieces,
+  type PieceSink,
+  type SegmentOutcome,
+} from '../lib/render'
+import {
+  ZipPickCancelled,
+  chooseZipTarget,
+  streamingZipSupported,
+  type ZipTarget,
+} from '../lib/zipTarget'
 import { segmentsOf, separateBlocked, zipName, type ExportMode } from '../lib/segments'
 import { batchProgress, secondsRemaining } from '../lib/eta'
 import { deleteRecent, getRecent, listRecents, saveRecent, type RecentMeta } from '../lib/recents'
@@ -91,6 +104,22 @@ export interface RunProgress extends VideoProgress {
    * pretending the bar spans the whole job.
    */
   piece: { index: number; total: number; name: string }
+}
+
+/**
+ * One finished piece of a batch, as the result card needs it.
+ *
+ * ⚠️ `file` is null when the archive was streamed to disk, and that is the
+ * whole point of streaming: the piece was handed to the file and released, so
+ * there is nothing left in the tab to offer a Save button for. Keeping the
+ * blobs "just for the list" would put `Σ pieces` straight back into memory and
+ * undo the feature. The name and the size are kept because they cost nothing
+ * and are what the list actually shows.
+ */
+export interface BatchPiece {
+  name: string
+  bytes: number
+  file: ConvertedFile | null
 }
 
 /** Stills we can put on the timeline as an intro or outro card. */
@@ -147,10 +176,38 @@ interface EditorState {
    * Deliberately still one `ConvertedFile`, so `download()`, `ResultCard`'s
    * headline and the "% smaller" comparison did not have to learn about
    * batches. The individual files live in `pieces` beside it.
+   *
+   * ⚠️ **Null on the streamed path**, where there is nothing to save because
+   * the file is already saved — `savedTo` is set instead. A `done` status no
+   * longer implies `result`, and `ResultCard` checks both.
    */
   result: ConvertedFile | null
   /** The individual pieces, when the export was a batch. Null otherwise. */
-  pieces: ConvertedFile[] | null
+  pieces: BatchPiece[] | null
+  /**
+   * Where a streamed archive ended up, and how big it turned out.
+   *
+   * Set instead of `result` when the batch was written straight into a file the
+   * user picked. There is no blob to offer afterwards and that is the feature,
+   * not a gap: the bytes went to disk as they were made, which is why a batch
+   * bigger than the tab can hold is possible at all.
+   */
+  savedTo: { name: string; bytes: number } | null
+  /**
+   * Set when a batch stopped part-way and the archive holds only what got
+   * written. `status` is still `'done'` — because something usable came out —
+   * but the result card says amber and names what is missing.
+   */
+  partial: { written: number; total: number; reason: string; missing: string[] } | null
+  /**
+   * Can this browser write an archive straight to a file the user chooses?
+   *
+   * Read once, at store construction: it is a property of the browser and
+   * cannot change mid-session. It reaches the memory plan (which budgets
+   * differently for the two destinations) and the export panel (which says what
+   * the button is about to do).
+   */
+  streamingZip: boolean
   error: string | null
   /** Set when the export could not run at all — e.g. the renderer isn't in the package yet. */
   blocked: string | null
@@ -195,7 +252,7 @@ interface EditorState {
   forgetRecent(id: string): Promise<void>
   setIntent(intent: 'convert' | null): void
   download(): void
-  /** Save one piece on its own, without unzipping. */
+  /** Save one piece on its own, without unzipping. No-op on the streamed path. */
   downloadPiece(index: number): void
   reset(): void
 }
@@ -213,6 +270,34 @@ function residentBytes(timeline: Timeline, assets: Record<SourceId, SourceAsset>
  * same act — and the Safari note below was learned once and should not have to
  * be learned again in a second copy of this.
  */
+/**
+ * What to say when a batch produced nothing at all.
+ *
+ * Kept in the shape it has always had — "Piece 3 of 5 (name) could not be
+ * written — reason" — because it is the sentence that used to be thrown from
+ * `exportSegments` and it was a good one. What changed is only that it is now
+ * reserved for the case where there is genuinely nothing to show for the run;
+ * a batch that got three pieces out reports through `partial` instead and
+ * keeps them.
+ */
+function failureMessage(outcome: SegmentOutcome): string {
+  const failure = outcome.failure
+  if (!failure) return 'The export failed'
+  const { index, total, name } = failure.piece
+  return `Piece ${index} of ${total} (${name}) could not be written — ${failure.reason}`
+}
+
+/** The partial-batch record, or null when every piece was written. */
+function partialOf(outcome: SegmentOutcome, total: number) {
+  if (!outcome.failure) return null
+  return {
+    written: outcome.written.length,
+    total,
+    reason: outcome.failure.reason,
+    missing: outcome.failure.missing,
+  }
+}
+
 function save(file: ConvertedFile | null): void {
   if (!file) return
   const url = URL.createObjectURL(file.blob)
@@ -245,8 +330,13 @@ export const useEditorStore = create<EditorState>((set, get) => {
     // numbers from the same timeline — a gap is black in a joined movie and
     // simply absent from a zip. The button shows `plan.estimate`, so a plan
     // that did not know the mode would put the joined size on a zip button.
+    // ⚠️ And the DESTINATION goes in beside it, for the same reason. A batch
+    // written straight into a file holds one piece at a time instead of all of
+    // them, so the same timeline that is refused on Safari exports on Chrome —
+    // and a plan that ignored this would refuse it on both.
+    const destination = mode === 'separate' && get().streamingZip ? 'stream' : 'memory'
     const plan = framed.clips.length
-      ? planTimelineExport(framed, residentBytes(framed, assets), settings, mode)
+      ? planTimelineExport(framed, residentBytes(framed, assets), settings, mode, undefined, destination)
       : null
     set({ timeline: framed, plan, ...overrides } as Partial<EditorState>)
   }
@@ -268,6 +358,10 @@ export const useEditorStore = create<EditorState>((set, get) => {
     mode: 'one',
     result: null,
     pieces: null,
+    savedTo: null,
+    partial: null,
+    // Asked once. It is a fact about the browser, not about the edit.
+    streamingZip: streamingZipSupported(),
     error: null,
     recents: [],
     intent: null,
@@ -282,7 +376,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     // lands on the timeline in milliseconds and without touching memory.
     addFiles: async (files, placement = 'append') => {
       if (!files.length) return
-      set({ status: 'reading', error: null, result: null, pieces: null })
+      set({ status: 'reading', error: null, result: null, pieces: null, savedTo: null, partial: null })
 
       let timeline = get().timeline
       const assets = { ...get().assets }
@@ -461,7 +555,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     },
 
     exportEdit: async () => {
-      const { timeline, assets, settings, plan, status, mode } = get()
+      const { timeline, assets, settings, plan, status, mode, streamingZip } = get()
       if (status === 'exporting' || !timeline.clips.length) return
       // The refusal is enforced here as well as on the button. A disabled button
       // is a hint; this is the guarantee.
@@ -474,6 +568,34 @@ export const useEditorStore = create<EditorState>((set, get) => {
         // "separate files" was still selected.
         set({ blocked: separateBlocked(timeline) })
         return
+      }
+
+      /* ── The save dialog goes FIRST, and nothing may come before it ────────
+       *
+       * ⚠️ `showSaveFilePicker()` needs transient user activation, and the
+       * activation is spent by the first await that outlives it. Every line
+       * above this point is synchronous for exactly that reason. Move a probe,
+       * a plan or a `set()` that triggers async work in front of it and the
+       * picker starts throwing `SecurityError` on slow machines only — the
+       * worst kind of bug to be handed.
+       *
+       * One piece is not a batch: there is nothing to release between pieces,
+       * so streaming buys nothing and a save dialog for it would be a dialog
+       * for nothing. See the matching guard in `planTimelineExport`.
+       */
+      let target: ZipTarget | null = null
+      if (mode === 'separate' && segments.length > 1 && streamingZip) {
+        try {
+          target = await chooseZipTarget(zipName(timeline))
+        } catch (err) {
+          // ⚠️ Cancelling the dialog CANCELS THE EXPORT. Falling back to the
+          // in-tab zip here would start a several-minute encode that someone
+          // has just declined — and on a batch the tab cannot hold, it would
+          // then fail. Silence is the right answer: they are back in the editor
+          // with nothing changed.
+          if (err instanceof ZipPickCancelled) return
+          target = null
+        }
       }
 
       const files: Record<SourceId, File> = {}
@@ -498,6 +620,8 @@ export const useEditorStore = create<EditorState>((set, get) => {
         blocked: null,
         result: null,
         pieces: null,
+        savedTo: null,
+        partial: null,
         progress: { fraction: 0, framesDone: 0, framesTotal: 0, bytesOut: 0, startedAt, secondsLeft: null, piece: firstPiece },
       })
 
@@ -528,33 +652,65 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
       try {
         if (mode === 'separate') {
-          const written = await exportSegments(
-            { timeline, files, settings },
-            {
-              onPiece: (piece) =>
-                set((s) => ({ progress: s.progress ? { ...s.progress, piece } : s.progress })),
-              onDetail: track,
-              onPieceDone: (piece, file) => {
-                finishedFrames += weights[piece.index - 1] ?? 0
-                finishedBytes += file.blob.size
-              },
+          /* Where a finished piece goes, and the ONLY difference between the
+           * two destinations.
+           *
+           * ⚠️ `kept` must stay empty on the streamed path. It is the array
+           * whose growth `lib/memory.ts` budgets `2 × Σ pieces` for; pushing to
+           * it "just so the result list can offer a Save button" would put the
+           * entire ceiling back while the plan went on promising it had gone. */
+          const kept: ConvertedFile[] = []
+          const sink: PieceSink = target
+            ? { accept: async (file) => void (await target!.stream.add(file.name, file.blob)) }
+            : { accept: async (file) => void kept.push(file) }
+
+          const outcome = await runSegments({ timeline, files, settings }, sink, {
+            onPiece: (piece) =>
+              set((s) => ({ progress: s.progress ? { ...s.progress, piece } : s.progress })),
+            onDetail: track,
+            onPieceDone: (piece, bytes) => {
+              finishedFrames += weights[piece.index - 1] ?? 0
+              finishedBytes += bytes
             },
-          )
-          // Only now, with every piece in hand. Zipping as we went would mean
-          // holding the pieces AND a growing zip, which is the one thing the
-          // memory plan budgets against.
-          const zip = await zipPieces(written, zipName(timeline))
-          set({ status: 'done', result: zip, pieces: written })
+          })
+
+          // Nothing at all was written. An archive of no files is not a result
+          // to offer, so this is the plain failure it has always been — and the
+          // half-made file on disk is abandoned rather than left as a 22-byte
+          // empty zip with the user's chosen name on it.
+          if (outcome.written.length === 0) {
+            await target?.abandon()
+            set({ status: 'editing', progress: null, error: failureMessage(outcome) })
+            return
+          }
+
+          const pieces: BatchPiece[] = outcome.written.map((record, index) => ({
+            ...record,
+            file: target ? null : (kept[index] ?? null),
+          }))
+          const partial = partialOf(outcome, segments.length)
+
+          if (target) {
+            // Closing writes the central directory for the pieces that landed —
+            // all of them, or the ones before the failure. Either way what is on
+            // disk is a valid archive when this resolves.
+            const bytes = await target.close()
+            set({ status: 'done', result: null, savedTo: { name: target.name, bytes }, pieces, partial })
+          } else {
+            const zip = await zipPieces(kept, zipName(timeline))
+            set({ status: 'done', result: zip, savedTo: null, pieces, partial })
+          }
         } else {
           const result = await exportTimeline({ timeline, files, settings }, (detail) =>
             track(detail, firstPiece),
           )
-          set({ status: 'done', result, pieces: null })
+          set({ status: 'done', result, pieces: null, savedTo: null, partial: null })
         }
       } catch (err) {
         // Whatever went wrong, the edit itself survives it — the timeline is
         // left exactly as it was so the user can change a setting and try
         // again rather than rebuild the cut.
+        await target?.abandon()
         set({
           status: 'editing',
           progress: null,
@@ -605,9 +761,14 @@ export const useEditorStore = create<EditorState>((set, get) => {
     download: () => save(get().result),
 
     // A zip of five pieces is the right default, and a poor way to get at ONE
-    // of them — the pieces are already in memory, so offering them individually
-    // costs nothing but a click.
-    downloadPiece: (index) => save(get().pieces?.[index] ?? null),
+    // of them — so when the pieces are still in the tab, offering them
+    // individually costs nothing but a click.
+    //
+    // ⚠️ There is nothing to offer on the streamed path: the piece went into
+    // the file and was released. `ResultCard` does not draw the button in that
+    // case, and this is the guarantee underneath it rather than a second
+    // reading of the same condition.
+    downloadPiece: (index) => save(get().pieces?.[index]?.file ?? null),
 
     reset: () => {
       for (const asset of Object.values(get().assets)) URL.revokeObjectURL(asset.url)
@@ -628,6 +789,8 @@ export const useEditorStore = create<EditorState>((set, get) => {
         progress: null,
         result: null,
         pieces: null,
+        savedTo: null,
+        partial: null,
         error: null,
         blocked: null,
         // Back at the front door, so the way in is a fresh question. `recents`
