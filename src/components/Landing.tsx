@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
+import { PrivacyNote } from '@unisim/sdk'
 import { formatBytes, formatDuration } from '@unisim/media'
 import DropZone from './DropZone'
 import VideoIllustration from './VideoIllustration'
 import { EDITOR_ACCEPT, useEditorStore } from '../stores/editorStore'
 import { MAX_FILE_BYTES, MAX_RECENTS } from '../lib/recents'
+import { useThemeStore } from '../stores/themeStore'
 
 /**
  * The front door.
@@ -35,6 +37,7 @@ const PILL_IDLE =
   'border-slate-300 hover:border-orange-400 hover:bg-orange-50/40 text-slate-700 dark:border-slate-700 dark:text-slate-200 dark:hover:border-orange-500 dark:hover:bg-orange-950/30'
 
 export default function Landing() {
+  const theme = useThemeStore((s) => s.effective)
   const addFiles = useEditorStore((s) => s.addFiles)
   const compressNow = useEditorStore((s) => s.compressNow)
   const recents = useEditorStore((s) => s.recents)
@@ -350,6 +353,19 @@ export default function Landing() {
             </p>
           )}
         </div>
+
+        {/* Under the card, outside the box — the suite's placement. ⚠️ `theme`
+            is not optional here: the note is inline-styled, so it cannot answer
+            the `.dark` class the rest of this page uses, and the RESOLVED theme
+            is what it needs ('system' has already become light or dark by the
+            time it reaches `effective`). */}
+        <PrivacyNote
+          className="mt-4"
+          theme={theme}
+          repo="https://github.com/universal-simulation-ltd/Universal_Video"
+          subject="Your video"
+          badge="on-device encoder · works offline"
+        />
       </div>
     </div>
   )
