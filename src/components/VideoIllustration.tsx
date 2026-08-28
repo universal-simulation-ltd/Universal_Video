@@ -1,10 +1,8 @@
-import { useEffect, useRef } from 'react'
-import { smoothstep, unSmoothstep } from '../lib/illustrationClock'
+import { useRef } from 'react'
+import { useIllustrationClock } from '@unisim/sdk'
 
 /** One sweep of the loop, frame 0 → the finished frame, in ms. It runs straight back down. */
 const SWEEP_MS = 5200
-/** The glide back to frame 0 when the pointer arrives. */
-const RETURN_MS = 480
 
 /**
  * The landing illustration: a clip sitting on a timeline is played up to the
@@ -18,10 +16,11 @@ const RETURN_MS = 480
  *
  * ONE CLOCK, NOT TEN ANIMATIONS
  * -----------------------------
- * Everything is a window on a single `--t`, 0 → 1, set here and read by
- * `index.css`. See `lib/illustrationClock.ts` for why one number rather than
- * ten `@keyframes`, and for the ⚠️ about this being the suite's third copy of
- * the loop below.
+ * Everything is a window on a single `--t`, 0 → 1, written by
+ * `useIllustrationClock` from `@unisim/sdk` and read by every rule in
+ * `index.css`. See that hook for why one number rather than ten `@keyframes`.
+ * The loop used to be inline here and in four sibling apps; it is one
+ * implementation now (sdk 0.118.0).
  *
  * ⚠️ THE GEOMETRY IS THE ARITHMETIC. The cut sits at x = 226 because the clip
  * runs 64 → 436 and 18 seconds is 43.5% of 42 — and the player's scrub bar
@@ -52,91 +51,7 @@ const RETURN_MS = 480
  */
 export default function VideoIllustration() {
   const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const set = (t: number) => el.style.setProperty('--t', t.toFixed(4))
-
-    // ⚠️ Reduced motion gets the FINISHED frame, not frame 0 and not a slower
-    // loop. An infinite animation has no honest "reduced" version, and frame 0
-    // is the clip before anything has been done to it — the still that says
-    // least about what the app is for.
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      set(1)
-      return
-    }
-
-    let raf = 0
-    let clock = 0 // 0 → 2. 0–1 cuts the clip, 1–2 puts it back.
-    let shown = 0 // the eased value last written, so a mid-glide exit can resume from it
-    let last = 0
-    let hovering = false
-    let from = 0 // where the glide back to frame 0 started
-    let since = 0 // ms into that glide
-
-    function frame(now: number) {
-      // A backgrounded tab stops firing rAF entirely; the first frame back
-      // would otherwise carry the whole gap and jump the loop forward.
-      const dt = Math.min(now - last, 100)
-      last = now
-
-      if (hovering) {
-        since += dt
-        shown = from * (1 - smoothstep(Math.min(since / RETURN_MS, 1)))
-        set(shown)
-        // Parked on frame 0 — stop asking for frames until the pointer leaves.
-        if (since >= RETURN_MS) {
-          raf = 0
-          return
-        }
-      } else {
-        clock = (clock + dt / SWEEP_MS) % 2
-        shown = smoothstep(clock <= 1 ? clock : 2 - clock)
-        set(shown)
-      }
-      raf = requestAnimationFrame(frame)
-    }
-
-    function start() {
-      if (raf) return
-      last = performance.now()
-      raf = requestAnimationFrame(frame)
-    }
-
-    function onEnter() {
-      if (hovering) return
-      hovering = true
-      from = shown
-      since = 0
-      start()
-    }
-
-    function onLeave() {
-      if (!hovering) return
-      hovering = false
-      // Pick up the clock wherever the glide left the picture, on the way up.
-      clock = unSmoothstep(shown)
-      start()
-    }
-
-    // Only on a real pointer. On a touch screen `pointerenter` fires on a tap
-    // and there is no matching leave, which would park the loop for good.
-    const canHover = window.matchMedia('(hover: hover)').matches
-    if (canHover) {
-      el.addEventListener('pointerenter', onEnter)
-      el.addEventListener('pointerleave', onLeave)
-    }
-    start()
-
-    return () => {
-      if (raf) cancelAnimationFrame(raf)
-      if (canHover) {
-        el.removeEventListener('pointerenter', onEnter)
-        el.removeEventListener('pointerleave', onLeave)
-      }
-    }
-  }, [])
+  useIllustrationClock(ref, { sweepMs: SWEEP_MS })
 
   return (
     <div ref={ref} data-testid="illustration" className="vid-illu relative w-full max-w-lg select-none">
