@@ -364,7 +364,6 @@ export default function Landing() {
           theme={theme}
           repo="https://github.com/universal-simulation-ltd/Universal_Video"
           subject="Your video"
-          badge="on-device encoder · works offline"
         />
       </div>
     </div>
