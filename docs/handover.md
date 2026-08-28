@@ -1,7 +1,7 @@
 # Universal Video — handover
 
 **State: v2 — a MULTI-TRACK EDITOR with a chosen output frame. It builds, lints,
-passes 131 unit tests and 20 Playwright specs driven headlessly against real
+passes 236 unit tests and 31 Playwright specs driven headlessly against real
 MP4s. LIVE at `opensource.unisim.co.uk/video`.**
 
 ⚠️ **This header said "Not deployed. Local commits only." until 2026-08-12, long
@@ -1217,3 +1217,87 @@ because the note describes that control by name and the SDK's changelog panel
 fetches it into the page. It passed in isolation and failed in the suite. All
 three uses are `{ exact: true }` now — **and any future locator that matches on
 words the changelog might also use needs the same.**
+
+## 17. Separate files write straight to disk, and a failed piece no longer takes the batch with it — 2026-08-28
+
+Two backlog items, and they turned out to be one piece of work: the reason a
+failed piece could not be kept was that there was nowhere to put a finished
+piece except the tab, and that is the same reason a big batch was refused.
+
+### What was wrong
+
+`createZip()` reads every finished piece and concatenates them, so the peak for
+a separate-files batch was `sources + 2 × Σ pieces` — the same ceiling as a
+joined export, honestly predicted and honestly refused, but refused. Nothing
+about the *encoding* was expensive: pieces are written one at a time and each
+one is small. What was expensive was having nowhere to put one.
+
+### What shipped
+
+`openZip()` in **`@unisim/media` 0.6.0** takes a sink and writes one entry at a
+time. `lib/zipTarget.ts` gives it a `showSaveFilePicker()` handle; each piece is
+appended and released, and the peak becomes `sources + 2 × the LONGEST piece`.
+On a long edit cut into a dozen that is the difference between a refusal and an
+export. Chrome and Edge get it; Safari and Firefox keep exactly the behaviour
+they had, which is why both paths are driven in the e2e suite.
+
+`runSegments()` replaced `exportSegments()` and returns a `SegmentOutcome`
+instead of throwing. A failed piece is a **result**, not an exception: the
+pieces before it are already in the archive, `close()` caps it off with exactly
+those, and `ResultCard` goes amber and names the ones that are missing.
+
+### ⚠️ Landmines this left behind
+
+**The save dialog must be the first thing after the click.** `showSaveFilePicker`
+needs transient user activation, and the activation is spent by the first await
+that outlives it. Every line of `exportEdit` above the picker call is
+synchronous for that reason alone. Put a probe, a plan or an async `set()` in
+front of it and the picker starts throwing `SecurityError` **on slow machines
+only** — which is the worst possible way to find out.
+
+**Cancelling the dialog cancels the export.** It does NOT fall back to the
+in-tab zip. Falling back would start a several-minute encode somebody has just
+declined, and on a batch too big for the tab it would then fail, having ignored
+them twice. `ZipPickCancelled` exists only to keep that distinct from every
+other picker failure — a lost gesture, a cross-origin frame, a blocked
+permission — all of which DO fall back.
+
+**Headless Chromium HAS `showSaveFilePicker`.** The existing separate-files e2e
+spec would have opened a native dialog Playwright cannot answer and hung until
+it timed out. `withoutFilePicker()` deletes it to reach the in-tab path;
+`withFakeFilePicker()` installs one that writes into an array, which is how the
+streamed archive is read back and demuxed. **Any new spec that exports a batch
+must call one of them.**
+
+**`BatchPiece.file` is null on the streamed path, and must stay null.** Keeping
+the blobs "just so the result list can offer a Save button" would put `Σ pieces`
+straight back into memory while `lib/memory.ts` went on promising it had gone.
+The list shows name and size, which cost nothing, and no per-piece Save.
+
+**One piece is not a batch.** A single-piece "separate files" export IS the whole
+archive — there is nothing to release between pieces — so it takes the in-tab
+path, gets no dialog, and `planTimelineExport` reports `destination: 'memory'`
+for it. Three places guard this and they have to agree; reporting `'stream'`
+there would halve the predicted peak and promise an export that cannot run.
+
+**Zip64 arrived with this** and is in the package, not here. Below 4 GB and
+65,535 entries the archive is byte-identical to what shipped before, which is
+the property that let this go out without re-testing every other consumer.
+
+### What was tested, and what was not
+
+Unit (236, up from 220): the streaming arithmetic — that it costs the longest
+piece and not the sum, that a batch refused in the tab is allowed streaming,
+that the refusal sentence stops blaming the total, that a single piece claims
+nothing — and the batch bookkeeping, through an `encodePiece` seam on
+`runSegments`, because there is no WebCodecs under vitest. A sink that stops
+accepting is proved to be the same kind of failure as a bad frame.
+
+E2E (31, up from 29): the in-tab path unchanged; the streamed path all the way
+to unzipping what reached the handle and handing each entry to the browser's own
+demuxer; and the cancel path.
+
+**Not tested:** a real save dialog, a real disk filling up, and anything at all
+past 4 GB — the Zip64 layout is asserted on the header writers directly, because
+streaming 5 GB through a CRC to prove a field offset would take minutes and
+prove nothing more.

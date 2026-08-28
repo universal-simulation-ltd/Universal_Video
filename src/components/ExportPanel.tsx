@@ -65,6 +65,7 @@ export default function ExportPanel() {
   const setMode = useEditorStore((s) => s.setMode)
   const separateBlock = useEditorStore(selectSeparateBlock)
   const pieceCount = useEditorStore(selectSegmentCount)
+  const streamingZip = useEditorStore((s) => s.streamingZip)
   const frame = useEditorStore((s) => s.frame)
   const setFramePreset = useEditorStore((s) => s.setFramePreset)
   const setCustomFrame = useEditorStore((s) => s.setCustomFrame)
@@ -115,6 +116,11 @@ export default function ExportPanel() {
   // original" in any sense a reader would take the right meaning from.
   const saving =
     mode === 'one' && route === 'compress' && sourceBytes > 0 ? 1 - plan.estimate.bytes / sourceBytes : 0
+  // A save dialog is coming, and the button says so with the usual ellipsis. One
+  // piece is not a batch — there is nothing to release between pieces — so it
+  // takes the ordinary in-tab path and gets no dialog, matching the guard in
+  // `exportEdit` and the one in `planTimelineExport`.
+  const streams = mode === 'separate' && streamingZip && pieceCount > 1
 
   return (
     <div className="space-y-3" ref={panelRef}>
@@ -158,9 +164,17 @@ export default function ExportPanel() {
               label={separateBlock ? 'Separate files' : `Separate files — ${pieceCount}`}
             />
           </div>
+          {/* ⚠️ The two browsers get two different sentences because they get
+              two different experiences, and the difference is worth a line: one
+              opens a save dialog before it starts and can then export a batch of
+              any length, the other builds the zip in the tab and is bounded by
+              what the tab holds. Saying "they come down together as one .zip" on
+              Chrome would be describing a download that no longer happens. */}
           <p className="text-[11.5px] leading-relaxed text-slate-500 dark:text-slate-400">
             {mode === 'separate'
-              ? `Every cut becomes its own MP4 — ${pieceCount} of them — and they come down together as one .zip.`
+              ? streams
+                ? `Every cut becomes its own MP4 — ${pieceCount} of them. You’ll be asked where to put the .zip first, and each piece is written into it as it finishes, so none of them waits in this tab for the rest.`
+                : `Every cut becomes its own MP4 — ${pieceCount} of them — and they come down together as one .zip.`
               : separateBlock
                 ? separateBlock
                 : `The ${clips} clips are joined into a single MP4.`}
@@ -345,7 +359,11 @@ export default function ExportPanel() {
           {refused || supported === false
             ? 'Can’t export this here'
             : mode === 'separate'
-              ? `Export ${pieceCount} separate videos (.zip)`
+              // The ellipsis is the usual promise that a dialog comes next, and
+              // it appears only where one actually will — a save picker landing
+              // unannounced on a button that just said "Export" is a small
+              // unpleasant surprise, and one character removes it.
+              ? `Export ${pieceCount} separate videos (.zip)${streams ? '…' : ''}`
               : route === 'compress'
                 ? 'Export this video'
                 // One clip can reach this now: a reframe is a letterbox, and only

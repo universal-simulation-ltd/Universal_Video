@@ -134,9 +134,14 @@ export default function Honesty() {
           dissolve and the next one begins after it — play them back to back
           and you get the edit, with no second written twice. What is still
           refused is a clip stacked on a second track: that really does play at
-          the same moment as another, and no order of files reproduces it. The
-          zip is built in this tab like everything else, so it counts against
-          the same ceiling.
+          the same moment as another, and no order of files reproduces it.{' '}
+          <strong className="font-semibold">On Chrome and Edge you are asked
+          where to put the .zip first</strong>, and each piece is written into
+          it as it finishes rather than waiting in this tab for the rest — so
+          the batch can be as long as you like, even though no single piece can
+          be. Other browsers build it here, where it counts against the same
+          ceiling as everything else. Either way, if one piece fails the ones
+          before it are kept and the missing ones are named.
         </Row>
 
         <Row
@@ -229,7 +234,10 @@ export default function Honesty() {
           gigabyte or so of <em>output</em> on a desktop and less on a phone. It
           is why the size is worked out and shown before you press anything, and
           why an edit that won’t fit is refused up front rather than half way
-          through.
+          through. The one way past it is{' '}
+          <strong className="font-semibold">separate files on Chrome or
+          Edge</strong>: those go straight into a file you pick, so only one
+          piece is ever held and the batch itself has no length limit.
         </Row>
 
         <Row

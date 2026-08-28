@@ -208,7 +208,50 @@ export interface SegmentProgress {
 }
 
 /**
- * Write every piece, in timeline order, one at a time.
+ * Somewhere for a finished piece to go, so that `runSegments` never has to hold
+ * one.
+ *
+ * The two implementations are in the store: an array, when the archive is being
+ * built in the tab, and `zipTarget.stream.add` when it is being written to a
+ * file the user chose. Splitting it out is what makes the memory difference
+ * between them real rather than notional — the streaming sink genuinely drops
+ * the blob, and the loop below keeps no reference of its own to make that a lie.
+ */
+export interface PieceSink {
+  /** Take a finished piece. Rejecting fails the batch the way an encode does. */
+  accept(file: ConvertedFile, piece: SegmentProgress): Promise<void>
+}
+
+/** What a piece weighed, once it is no longer necessarily in memory to ask. */
+export interface PieceRecord {
+  name: string
+  bytes: number
+}
+
+/**
+ * How a batch ended.
+ *
+ * ⚠️ A failed piece is a RESULT, not an exception. It used to throw, which took
+ * the pieces already written down with it — five minutes of encoding discarded
+ * because the fifth clip had a bad frame in it. The pieces that succeeded are
+ * real files and the caller can offer them; what that needed was somewhere to
+ * say which ones are missing and why, which is this.
+ */
+export interface SegmentOutcome {
+  /** In timeline order, and every one of them was handed to the sink. */
+  written: PieceRecord[]
+  /** Null when the whole batch was written. */
+  failure: {
+    piece: SegmentProgress
+    /** The encoder's own words, without the "Piece 3 of 5" wrapper. */
+    reason: string
+    /** The pieces that never got made — the failed one first. */
+    missing: string[]
+  } | null
+}
+
+/**
+ * Write every piece, in timeline order, one at a time, into `sink`.
  *
  * **Sequentially, and that is not laziness.** Two encodes at once would hold two
  * outputs plus two decoders in memory against a budget `lib/memory.ts` has
@@ -216,49 +259,76 @@ export interface SegmentProgress {
  * as fast anyway. One at a time also means the piece being written is the piece
  * the progress readout names.
  *
- * A failure part-way through throws with the piece named, and the pieces
- * already finished are lost. That is the honest behaviour for now: keeping them
- * would mean offering a half-done zip, and "here are 3 of your 5 clips" needs a
- * UI that says which two are missing and why.
+ * Throws only when there is nothing to write at all — a timeline that cannot be
+ * split is a mistake to catch before the button, not a batch that failed. A
+ * piece that fails part-way stops the run and comes back in
+ * {@link SegmentOutcome.failure} with everything before it already in the sink.
  */
-export async function exportSegments(
+export async function runSegments(
   { timeline, files, settings }: TimelineRenderInput,
-  hooks: {
+  sink: PieceSink,
+  options: {
     /** Before a piece starts. */
     onPiece?: (piece: SegmentProgress) => void,
     /** While it is being written, with the encoder's own per-piece numbers. */
     onDetail?: (progress: VideoProgress, piece: SegmentProgress) => void,
-    /** After it is written — the caller banks its real size for the batch readout. */
-    onPieceDone?: (piece: SegmentProgress, file: ConvertedFile) => void,
+    /** After it is written AND accepted — the caller banks its real size. */
+    onPieceDone?: (piece: SegmentProgress, bytes: number) => void,
+    /**
+     * How one piece is encoded. Defaults to `exportTimeline` and nothing in the
+     * app passes anything else.
+     *
+     * It is a parameter because the interesting behaviour in this function is
+     * not the encoding — it is the BOOKKEEPING around a failure: which pieces
+     * count as written, which are named as missing, and whether the ones before
+     * the failure survive. None of that can be exercised under vitest, where
+     * there is no WebCodecs to encode with, and all of it is what the
+     * partial-batch result depends on being right.
+     */
+    encodePiece?: (
+      input: TimelineRenderInput,
+      onProgress?: (progress: VideoProgress) => void,
+    ) => Promise<ConvertedFile>,
   } = {},
-): Promise<ConvertedFile[]> {
+): Promise<SegmentOutcome> {
+  const hooks = options
+  const encode = options.encodePiece ?? exportTimeline
   const segments = segmentsOf(timeline)
   if (segments.length === 0) {
     throw new Error(separateBlocked(timeline) ?? 'This edit cannot be written out as separate files.')
   }
 
-  const done: ConvertedFile[] = []
+  const written: PieceRecord[] = []
   for (const segment of segments) {
     const piece: SegmentProgress = { index: segment.index, total: segments.length, name: segment.name }
     hooks.onPiece?.(piece)
     try {
-      const result = await exportTimeline(
+      const result = await encode(
         { timeline: segment.timeline, files, settings },
         hooks.onDetail ? (detail) => hooks.onDetail?.(detail, piece) : undefined,
       )
       // The name comes from the segment, not from `exportName()`: a piece is not
       // "the edit", and five files called `holiday-edit.mp4` is not a zip.
-      const file = { ...result, name: segment.name }
-      done.push(file)
-      hooks.onPieceDone?.(piece, file)
+      const bytes = result.blob.size
+      // ⚠️ The sink is inside the try on purpose. A file handle that stops
+      // accepting bytes half-way — the disk filled, the volume was ejected — is
+      // the same kind of event as an encode failing, and the user needs the
+      // same answer: these pieces are written, these are not, and here is why.
+      await sink.accept({ ...result, name: segment.name }, piece)
+      written.push({ name: segment.name, bytes })
+      hooks.onPieceDone?.(piece, bytes)
     } catch (err) {
-      const reason = err instanceof Error ? err.message : 'the encoder stopped'
-      throw new Error(
-        `Piece ${piece.index} of ${piece.total} (${piece.name}) could not be written — ${reason}`,
-      )
+      return {
+        written,
+        failure: {
+          piece,
+          reason: err instanceof Error ? err.message : 'the encoder stopped',
+          missing: segments.slice(segment.index - 1).map((s) => s.name),
+        },
+      }
     }
   }
-  return done
+  return { written, failure: null }
 }
 
 /** The finished pieces, as one file to save. STORED — an MP4 does not deflate. */

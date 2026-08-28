@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_VIDEO_SETTINGS, timelineDuration, type MemoryBudget, type Timeline } from '@unisim/media'
-import { addSource, appendClip, applyCrossfade, cutAt, deleteClip, describeSource, emptyTimeline } from './edit'
-import { estimateTimelineOutput, peakBytesForTimeline, planTimelineExport } from './memory'
+import {
+  addSource,
+  appendClip,
+  applyCrossfade,
+  cutAt,
+  deleteClip,
+  describeSource,
+  emptyTimeline,
+  moveClip,
+} from './edit'
+import {
+  estimateTimelineOutput,
+  largestPieceBytes,
+  peakBytesForTimeline,
+  planTimelineExport,
+} from './memory'
 
 const MiB = 1024 ** 2
 const GiB = 1024 ** 3
@@ -150,9 +164,12 @@ describe('predicting a batch of separate files', () => {
 
   it('⚠️ does not go soft on the ceiling just because it writes one piece at a time', () => {
     // The tempting mistake: "only one piece is in the encoder, so a zip is
-    // cheaper". It is not — `createZip` copies every finished piece into a new
-    // blob, so the moment the zip is built the tab holds all of them twice.
-    // Same budget, same verdict.
+    // cheaper". Held IN THE TAB it is not — `createZip` copies every finished
+    // piece into a new blob, so the moment the zip is built the tab holds all
+    // of them twice. Same budget, same verdict.
+    //
+    // (Streaming the archive to a file IS cheaper, and that is the next
+    // describe block. The distinction is the destination, never the mode.)
     const tl = cutIntoThree()
     const joined = planTimelineExport(tl, 400 * MiB, DEFAULT_VIDEO_SETTINGS, 'one', budget(1.5 * GiB))
     const zipped = planTimelineExport(tl, 400 * MiB, DEFAULT_VIDEO_SETTINGS, 'separate', budget(1.5 * GiB))
@@ -193,5 +210,130 @@ describe('predicting a batch of separate files', () => {
     const zipped = estimateTimelineOutput(tl, DEFAULT_VIDEO_SETTINGS, 'separate')
     expect(zipped.seconds).toBe(19)
     expect(zipped.bytes).toBeGreaterThan(0)
+  })
+})
+
+describe('streaming the archive to a file the user picked', () => {
+  /** One long video cut into `cuts + 1` pieces of roughly equal length. */
+  function cutInto(pieces: number, totalSec: number): Timeline {
+    let tl = emptyTimeline()
+    tl = addSource(tl, describeSource('v', 'video', 'long.mp4', totalSec, 1920, 1080, true), 30)
+    tl = appendClip(tl, 'v')
+    for (let i = 1; i < pieces; i += 1) tl = cutAt(tl, (totalSec / pieces) * i)
+    return tl
+  }
+
+  it('costs the LONGEST piece rather than the sum of them', () => {
+    const tl = cutInto(4, 3600)
+    const huge = budget(64 * GiB) // big enough that neither is refused
+    const held = planTimelineExport(tl, 100 * MiB, DEFAULT_VIDEO_SETTINGS, 'separate', huge, 'memory')
+    const streamed = planTimelineExport(tl, 100 * MiB, DEFAULT_VIDEO_SETTINGS, 'separate', huge, 'stream')
+
+    // Four equal pieces, so the resident output is about a quarter of the batch.
+    expect(streamed.residentOutputBytes).toBeLessThan(held.residentOutputBytes * 0.3)
+    expect(streamed.peakBytes).toBeLessThan(held.peakBytes)
+    // The SOURCES are still resident either way — streaming moves the output,
+    // not the input. If this ever passes with sources excluded, the refusal has
+    // become optimistic in the one direction it must never be.
+    expect(streamed.peakBytes).toBeGreaterThan(100 * MiB)
+    // And the prediction on the button is unchanged: the same files come out.
+    expect(streamed.estimate.bytes).toBe(held.estimate.bytes)
+  })
+
+  it('⚠️ turns a batch that had to be refused into one that exports', () => {
+    // The whole point of the feature, stated as the test that would fail if the
+    // arithmetic were merely relabelled rather than actually changed.
+    const tl = cutInto(8, 4 * 3600)
+    const sourceBytes = 200 * MiB
+    const roomy = budget(64 * GiB)
+    const held = planTimelineExport(tl, sourceBytes, DEFAULT_VIDEO_SETTINGS, 'separate', roomy, 'memory')
+    const streamed = planTimelineExport(tl, sourceBytes, DEFAULT_VIDEO_SETTINGS, 'separate', roomy, 'stream')
+
+    // A budget that sits between the two peaks — derived from them rather than
+    // guessed, so this test does not rot when the bitrate table moves.
+    const between = budget((held.peakBytes + streamed.peakBytes) / 2)
+    expect(planTimelineExport(tl, sourceBytes, DEFAULT_VIDEO_SETTINGS, 'separate', between, 'memory').verdict)
+      .toBe('refuse')
+    expect(planTimelineExport(tl, sourceBytes, DEFAULT_VIDEO_SETTINGS, 'separate', between, 'stream').verdict)
+      .not.toBe('refuse')
+  })
+
+  it('says where the bytes are, and no longer blames the total', () => {
+    const tl = cutInto(6, 6 * 3600)
+    const plan = planTimelineExport(tl, 200 * MiB, DEFAULT_VIDEO_SETTINGS, 'separate', budget(1.5 * GiB), 'stream')
+    expect(plan.verdict).toBe('refuse')
+    // The in-tab sentence would be a lie here — the pieces are NOT all held.
+    expect(plan.detail).not.toContain('zip holds all')
+    expect(plan.detail).toContain('longest single piece')
+    // And the way out is a further cut, not a second batch: splitting the batch
+    // does nothing when the peak is one piece.
+    expect(plan.detail).not.toContain('second batch')
+  })
+
+  it('⚠️ makes no claim for a single piece, because there is nothing to release', () => {
+    // One piece IS the archive. Reporting 'stream' here would under-count the
+    // peak by half and promise an export that cannot run.
+    let tl = emptyTimeline()
+    tl = addSource(tl, describeSource('v', 'video', 'v.mp4', 60, 1920, 1080, true), 30)
+    tl = appendClip(tl, 'v')
+    const plan = planTimelineExport(tl, 40 * MiB, DEFAULT_VIDEO_SETTINGS, 'separate', budget(1.5 * GiB), 'stream')
+    expect(plan.fileCount).toBe(1)
+    expect(plan.destination).toBe('memory')
+    expect(plan.residentOutputBytes).toBe(plan.estimate.bytes)
+  })
+
+  it('ignores the destination for a joined movie — there is no archive to stream', () => {
+    const tl = timelineOf(3, 60)
+    const held = planTimelineExport(tl, 40 * MiB, DEFAULT_VIDEO_SETTINGS, 'one', budget(1.5 * GiB), 'memory')
+    const asked = planTimelineExport(tl, 40 * MiB, DEFAULT_VIDEO_SETTINGS, 'one', budget(1.5 * GiB), 'stream')
+    expect(asked.destination).toBe('memory')
+    expect(asked.peakBytes).toBe(held.peakBytes)
+  })
+
+  it('defaults to holding it in the tab, so an unaware caller is never over-promised', () => {
+    const tl = cutInto(4, 3600)
+    const explicit = planTimelineExport(tl, 40 * MiB, DEFAULT_VIDEO_SETTINGS, 'separate', budget(1.5 * GiB), 'memory')
+    const implied = planTimelineExport(tl, 40 * MiB, DEFAULT_VIDEO_SETTINGS, 'separate', budget(1.5 * GiB))
+    expect(implied.destination).toBe('memory')
+    expect(implied.peakBytes).toBe(explicit.peakBytes)
+  })
+
+  it('picks the longest piece when the cuts are uneven, not the first or the average', () => {
+    let tl = emptyTimeline()
+    tl = addSource(tl, describeSource('v', 'video', 'v.mp4', 100, 1920, 1080, true), 30)
+    tl = appendClip(tl, 'v')
+    tl = cutAt(tl, 10)  // 10 s, then 90 s
+    const estimate = estimateTimelineOutput(tl, DEFAULT_VIDEO_SETTINGS, 'separate')
+    const largest = largestPieceBytes(tl, estimate)
+    // 90 of the 100 seconds, so about nine tenths of the batch — nowhere near
+    // the 10 s first piece and well above a 50 s average.
+    expect(largest / estimate.bytes).toBeGreaterThan(0.85)
+    expect(largest).toBeLessThan(estimate.bytes)
+  })
+
+  it('falls back to the whole estimate when there are no pieces to measure', () => {
+    // A timeline `separateBlocked` refuses has no pieces. Returning 0 here would
+    // make the peak look like just the sources and let a refused export through.
+    //
+    // ⚠️ Stacked clips, NOT a crossfade. A dissolve used to be blocked and is
+    // not since 2026-08-28 — it renders into the piece it starts in — so a
+    // crossfaded timeline splits fine and would not exercise this at all.
+    let tl = timelineOf(2, 10)
+    tl = moveClip(tl, tl.clips[1].id, 0, 1)
+    expect(tl.clips.some((c) => c.track !== 0)).toBe(true)
+    const estimate = estimateTimelineOutput(tl, DEFAULT_VIDEO_SETTINGS, 'separate')
+    expect(largestPieceBytes(tl, estimate)).toBe(estimate.bytes)
+  })
+
+  it('sizes a smaller alternative the same way the real export will be measured', () => {
+    // ⚠️ Measuring the candidate against the in-tab sum while the export streams
+    // offers 480p to somebody whose 1080p already fits.
+    const tl = cutInto(6, 6 * 3600)
+    const plan = planTimelineExport(tl, 200 * MiB, DEFAULT_VIDEO_SETTINGS, 'separate', budget(1.5 * GiB), 'stream')
+    if (plan.alternative) {
+      const resident = largestPieceBytes(tl, plan.alternative.estimate)
+      expect(peakBytesForTimeline(plan.sourceBytes, plan.alternative.estimate, resident))
+        .toBeLessThanOrEqual(1.5 * GiB * 0.9)
+    }
   })
 })

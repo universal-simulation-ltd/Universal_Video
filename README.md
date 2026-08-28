@@ -56,7 +56,7 @@ drag and one click. What has **not** changed is everything below.
 | **Read MKV, WebM, AVI or WMV** | ❌ No. MKV and WebM need a Matroska/EBML reader (a real piece of work, and the top of the backlog). AVI and WMV are refused **permanently** — the browser cannot decode MPEG-4 ASP or WMV3, so a reader would buy a different error message, not a working conversion. |
 | **Read fragmented MP4** | ❌ Not yet. Common from screen recorders and some phone apps, so the refusal fires more often than its rarity suggests. It is detected on drop and named, not parsed half-way. |
 | **Write WebM / VP9** | ❌ Not yet — and this is the highest-value gap, because it is also what would make **Firefox** a supported browser. WebCodecs already has the VP9 encoder; only the container is missing. |
-| **Split into separate files** | ✅ Every cut on the timeline can come out as its own MP4, delivered as one `.zip` — see [Separate files](#separate-files-one-timeline-n-mp4s) below. One pill in the export panel; no split-point editor, because the cuts already on the timeline **are** the pieces. Refused (with the reason, and the fix) on a timeline that isn't a plain row of cuts: a stacked clip or a crossfade belongs to two pieces at once. |
+| **Split into separate files** | ✅ Every cut on the timeline can come out as its own MP4, delivered as one `.zip` — written straight to a file you pick on Chrome and Edge, so the batch can be any length. See [Separate files](#separate-files-one-timeline-n-mp4s) below. One pill in the export panel; no split-point editor, because the cuts already on the timeline **are** the pieces. Refused (with the reason, and the fix) on a timeline that isn't a plain row of cuts: a stacked clip or a crossfade belongs to two pieces at once. |
 | **Skip what nobody can see** | ✅ A layer hidden behind a fully opaque, **frame-filling** layer is not drawn, and if it is silent as well as invisible its `<video>` is paused outright — a whole decode off the main thread, which is what made a stacked timeline stutter. ⚠️ Both conditions are load-bearing: layers are drawn *contained*, so a pillarboxed clip shows the layer beneath it down both sides, and a clip mid-crossfade is see-through by definition. "Topmost wins" would blank picture in both cases. **Audio is never culled** — a clip behind another is still audible, and that is an ordinary edit. |
 | **Snap clips together** | ✅ Dragging a clip magnets its head *and* its tail to neighbouring clip edges, the playhead and the start of the movie, within 8 px on screen — so the tolerance feels the same at every zoom. A guide line shows where it has taken hold; **Alt** suspends it; arrow keys are never snapped, because they are the way to place a clip exactly. This is not a nicety: a same-track overlap is resolved by moving the clip to a **new track**, so missing a butt-join by two pixels used to cost you a second video track. |
 | **Edit** | ✅ Trim, cut at the playhead, delete, slide clips along and between tracks, stack them (two clips slid over each other add a track rather than overwriting), intro/outro cards from an image or a video, and crossfade / fade-to-black between clips. **A clip carries its own audio**, so a cut splits picture and sound at the same instant by construction — see [`timeline.ts`](https://github.com/universal-simulation-ltd/universal-platform/blob/main/packages/media/src/timeline.ts), the contract this editor and the renderer share. |
@@ -107,14 +107,31 @@ stacked or dissolving timeline has instants belonging to two — there is no
 honest answer to *which file does the crossfade go in?* So the pill greys out
 and names the fix, the same way the memory refusal does.
 
-**A zip does not lower the ceiling, and it was tempting to assume it does.**
-Only one piece is in the encoder at a time, so the biggest single output is
-small — but `createZip()` copies every finished piece into a new blob, so the
+**An in-tab zip does not lower the ceiling, and it was tempting to assume it
+does.** Only one piece is in the encoder at a time, so the biggest single output
+is small — but `createZip()` copies every finished piece into a new blob, so the
 moment the zip is built the tab holds all of them twice. That is
 `sources + 2 × Σ pieces`: the same shape as the joined export.
-`peakBytesForTimeline()` in [`lib/memory.ts`](src/lib/memory.ts) writes the
-arithmetic out in full, because a formula that was optimistic here would
-defeat the one defence there is against tab death.
+
+**Writing the zip to a file, rather than into the tab, is what actually lowers
+it.** On Chrome and Edge the export opens a save dialog first, and each piece is
+appended to the archive on disk and let go before the next one starts — so the
+peak is `sources + 2 × the LONGEST piece`, and a batch can be as long as you
+like even though no single piece can be. Safari and Firefox have no
+`showSaveFilePicker()`, so they keep the in-tab path and the in-tab ceiling; the
+app says which one you are getting before you press the button.
+
+`peakBytesForTimeline()` in [`lib/memory.ts`](src/lib/memory.ts) writes both
+sums out in full, because a formula that was optimistic here would defeat the
+one defence there is against tab death — and because the two destinations
+genuinely differ, a plan that guessed would be wrong in one direction or the
+other every time.
+
+**A piece that fails no longer takes the batch with it.** If the fifth of five
+stops, the archive is finished with the four that landed and the result card
+names the one that is missing and why. That is only safe because a
+short-closed archive is a real archive — `@unisim/media`'s selftest asserts
+exactly that.
 
 What *does* change with the mode is the predicted length. A gap left by a
 deleted clip is written as black in a joined movie and simply isn't a piece in a
@@ -127,12 +144,12 @@ sort `10` before `2`), then the source's stem, then the piece's in-point **in
 its own source** — which answers the question a file name gets asked, *where in
 the original did this come from?*
 
-> The zip writer itself ([`lib/zip.ts`](src/lib/zip.ts)) is a dependency-free
-> STORED archiver — an MP4 does not deflate — and is the **fourth verbatim copy**
-> in the suite, after Converter, Compress and PDF. It belongs in `@unisim/media`;
-> there is a backlog item saying so. None of the other three had a test, so
-> [`zip.test.ts`](src/lib/zip.test.ts) is the first: it walks the archive the way
-> an unzipper does and pulls the entries back out.
+> The zip writer itself is a dependency-free STORED archiver — an MP4 does not
+> deflate — and lives in `@unisim/media` rather than here. It used to be the
+> **fourth verbatim copy** in the suite, after Converter, Compress and PDF; that
+> backlog item is closed. `createZip` builds an archive whole, `openZip` streams
+> one into a sink, and the package's selftest proves the two write the same
+> bytes — which is what keeps an export from depending on which browser made it.
 
 ## The ceiling, and why it is the *output* that binds
 

@@ -145,7 +145,46 @@ async function readBackExport(page: Page) {
 }
 
 /**
- * Save the ZIP, unpack it in the page, and load every entry with the browser's
+ * Take `showSaveFilePicker` away, so the app takes the in-tab path.
+ *
+ * ⚠️ **Headless Chromium HAS this API**, so without this the separate-files
+ * export opens a native save dialog that Playwright cannot answer and the run
+ * hangs until it times out. The two destinations are two different code paths
+ * with two different memory stories (see `lib/memory.ts`) and both ship, so
+ * both are driven here — this is how the fallback one is reached.
+ */
+async function withoutFilePicker(page: Page) {
+  await page.addInitScript(() => {
+    delete (window as unknown as Record<string, unknown>).showSaveFilePicker
+  })
+}
+
+/**
+ * Give the page a save picker that writes into an array instead of onto the
+ * disk, and hand back a reader for what it caught.
+ *
+ * The archive is assembled from the chunks the app streamed, which means the
+ * bytes checked below are the bytes that would have reached the file — headers,
+ * ordering, central directory and all. A picker that returned a handle writing
+ * nowhere would let a completely broken writer pass.
+ */
+async function withFakeFilePicker(page: Page, fileName: string) {
+  await page.addInitScript((name: string) => {
+    const chunks: Uint8Array[] = []
+    ;(window as unknown as { __zipChunks: Uint8Array[] }).__zipChunks = chunks
+    ;(window as unknown as Record<string, unknown>).showSaveFilePicker = async () => ({
+      name,
+      createWritable: async () => ({
+        write: async (data: Uint8Array) => void chunks.push(new Uint8Array(data)),
+        close: async () => {},
+        abort: async () => {},
+      }),
+    })
+  }, fileName)
+}
+
+/**
+ * Get the ZIP, unpack it in the page, and load every entry with the browser's
  * own demuxer.
  *
  * The unzipping is done here rather than in Node so that the entries never
@@ -154,21 +193,47 @@ async function readBackExport(page: Page) {
  * record, walk the directory, and slice each entry out at the offset it names.
  * If any of those offsets is wrong the slice is not an MP4 and `<video>` refuses
  * it, which is the point.
+ *
+ * `source` says where the archive came from, and both are exercised:
+ *
+ *   `'download'` — built in the tab and handed to the Save button, which is what
+ *                  Safari and Firefox get.
+ *   `'stream'`   — written a piece at a time into the handle from
+ *                  `withFakeFilePicker`, which is what Chrome and Edge get.
+ *
+ * ⚠️ The same walk has to work on both, because they are meant to be the same
+ * archive. That is the assertion, not a convenience: the streaming writer builds
+ * its central directory from offsets it accumulated rather than from a finished
+ * buffer, and an off-by-one there produces a file that looks fine and opens
+ * nowhere.
  */
-async function readBackZip(page: Page) {
-  return page.evaluate(async () => {
-    const captured: Blob[] = []
+async function readBackZip(page: Page, source: 'download' | 'stream' = 'download') {
+  return page.evaluate(async (from: 'download' | 'stream') => {
     const real = URL.createObjectURL
-    URL.createObjectURL = (obj: Blob | MediaSource) => {
-      if (obj instanceof Blob) captured.push(obj)
-      return real.call(URL, obj)
-    }
-    const save = [...document.querySelectorAll('button')].find((b) => /^Save all /.test(b.textContent ?? ''))
-    save?.click()
-    await new Promise((r) => setTimeout(r, 300))
-    URL.createObjectURL = real
+    let zip: Uint8Array
 
-    const zip = new Uint8Array(await captured[captured.length - 1].arrayBuffer())
+    if (from === 'stream') {
+      const chunks = (window as unknown as { __zipChunks: Uint8Array[] }).__zipChunks ?? []
+      const total = chunks.reduce((n, c) => n + c.length, 0)
+      zip = new Uint8Array(total)
+      let at = 0
+      for (const chunk of chunks) {
+        zip.set(chunk, at)
+        at += chunk.length
+      }
+    } else {
+      const captured: Blob[] = []
+      URL.createObjectURL = (obj: Blob | MediaSource) => {
+        if (obj instanceof Blob) captured.push(obj)
+        return real.call(URL, obj)
+      }
+      const save = [...document.querySelectorAll('button')].find((b) => /^Save all /.test(b.textContent ?? ''))
+      save?.click()
+      await new Promise((r) => setTimeout(r, 300))
+      URL.createObjectURL = real
+      zip = new Uint8Array(await captured[captured.length - 1].arrayBuffer())
+    }
+
     const view = new DataView(zip.buffer)
     const endAt = zip.length - 22
     const count = view.getUint16(endAt + 8, true)
@@ -196,7 +261,7 @@ async function readBackZip(page: Page) {
       at += 46 + nameLength + view.getUint16(at + 30, true) + view.getUint16(at + 32, true)
     }
     return out
-  })
+  }, source)
 }
 
 /**
@@ -1312,6 +1377,11 @@ test.describe('Universal Video', () => {
     // empty files — so each entry is pulled back out of the archive and handed
     // to the browser's own demuxer, which is the only witness that cannot be
     // fooled by our own reader agreeing with our own writer.
+    //
+    // ⚠️ This is the IN-TAB path — what Safari and Firefox get — and it only
+    // stays reachable because the picker is taken away first. The streaming
+    // path Chrome and Edge get is the test below.
+    await withoutFilePicker(page)
     await page.goto('/')
     await drop(page, 'clip.mp4', FIXTURE_BYTES)
     await page.getByLabel('Playhead').fill('1')
@@ -1351,6 +1421,80 @@ test.describe('Universal Video', () => {
     const total = entries.reduce((sum, e) => sum + e.duration, 0)
     expect(total).toBeGreaterThan(1.5)
     expect(total).toBeLessThan(2.6)
+  })
+
+  test('writes the pieces straight into a file the user picked, holding none of them', async ({ page }) => {
+    // The Chrome and Edge path, and the reason the memory refusal moved: each
+    // piece is appended to the archive on disk and released, so the tab never
+    // holds more than one. `lib/memory.ts` budgets for that, and this is the
+    // proof that the export really behaves the way the budget assumes.
+    await withFakeFilePicker(page, 'clip-pieces.zip')
+    await page.goto('/')
+    await drop(page, 'clip.mp4', FIXTURE_BYTES)
+    await page.getByLabel('Playhead').fill('1')
+    await page.getByRole('button', { name: /^Cut at / }).click()
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(2)
+
+    await page.getByRole('button', { name: 'Separate files — 2' }).click()
+
+    // The ellipsis is the promise that a dialog is coming — it is on the button
+    // only where the export will actually open one.
+    const exportButton = page.getByRole('button', { name: /Export 2 separate videos \(\.zip\)…/ })
+    await expect(exportButton).toBeVisible()
+    await exportButton.click()
+
+    await expect(page.getByText(/Writing piece \d of 2…/)).toBeVisible({ timeout: 60_000 })
+
+    // ⚠️ NO "Save all" button, and that is the assertion. The file is already
+    // written; offering to save it again would mean the tab had kept a copy,
+    // which is exactly what this path exists not to do.
+    await expect(page.getByText(/Saved as/)).toBeVisible({ timeout: 180_000 })
+    await expect(page.getByText('clip-pieces.zip')).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Save all/ })).toHaveCount(0)
+
+    // The pieces are still listed by name and size — that costs nothing to keep
+    // — but with no per-piece Save, because those bytes are gone from the tab.
+    await expect(page.getByText('01_clip_00-00-00.mp4')).toBeVisible()
+    await expect(page.getByText('02_clip_00-00-01.mp4')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0)
+
+    // And what reached the handle is a real archive of real videos, walked the
+    // same way the in-tab one is above.
+    const entries = await readBackZip(page, 'stream')
+    expect(entries.map((e) => e.name)).toEqual(['01_clip_00-00-00.mp4', '02_clip_00-00-01.mp4'])
+    for (const entry of entries) {
+      expect(entry.width).toBe(480)
+      expect(entry.height).toBe(270)
+      expect(entry.duration).toBeGreaterThan(0.4)
+      expect(entry.duration).toBeLessThan(1.6)
+      expect(entry.size).toBeGreaterThan(1000)
+    }
+    const total = entries.reduce((sum, e) => sum + e.duration, 0)
+    expect(total).toBeGreaterThan(1.5)
+    expect(total).toBeLessThan(2.6)
+  })
+
+  test('cancelling the save dialog cancels the export rather than falling back', async ({ page }) => {
+    // ⚠️ Falling back to the in-tab zip here would start a several-minute encode
+    // that the user has just declined — and on a batch too big for the tab it
+    // would then fail, having ignored them twice.
+    await page.addInitScript(() => {
+      ;(window as unknown as Record<string, unknown>).showSaveFilePicker = async () => {
+        throw new DOMException('The user aborted a request.', 'AbortError')
+      }
+    })
+    await page.goto('/')
+    await drop(page, 'clip.mp4', FIXTURE_BYTES)
+    await page.getByLabel('Playhead').fill('1')
+    await page.getByRole('button', { name: /^Cut at / }).click()
+    await page.getByRole('button', { name: 'Separate files — 2' }).click()
+    await page.getByRole('button', { name: /Export 2 separate videos/ }).click()
+
+    // Back where they were: no progress, no result, no error shouting at them
+    // about something they chose.
+    await expect(page.getByText(/Writing piece/)).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /Export 2 separate videos/ })).toBeEnabled()
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(2)
   })
 })
 
