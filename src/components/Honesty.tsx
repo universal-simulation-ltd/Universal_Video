@@ -128,11 +128,15 @@ export default function Honesty() {
           <strong className="font-semibold">separate files</strong>: each piece
           is written as its own MP4 and they come down together as one .zip,
           numbered so they sort back into the order you cut them. The settings
-          below apply to every piece — there is nothing to set up per file. It
-          needs a plain row of cuts, though: a clip stacked on a second track,
-          or a crossfade, belongs to two pieces at once, so those are refused
-          and said so rather than guessed at. The zip is built in this tab like
-          everything else, so it counts against the same ceiling.
+          below apply to every piece — there is nothing to set up per file.{' '}
+          <strong className="font-semibold">A crossfade goes in the piece it
+          starts in</strong>, so the piece you were watching ends with the
+          dissolve and the next one begins after it — play them back to back
+          and you get the edit, with no second written twice. What is still
+          refused is a clip stacked on a second track: that really does play at
+          the same moment as another, and no order of files reproduces it. The
+          zip is built in this tab like everything else, so it counts against
+          the same ceiling.
         </Row>
 
         <Row

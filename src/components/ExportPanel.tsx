@@ -147,9 +147,12 @@ export default function ExportPanel() {
             />
             <ModeButton
               selected={mode === 'separate'}
-              // Not offered until the timeline is a plain row of cuts. The
-              // reason is right underneath — a control that greys out without
-              // saying why is indistinguishable from a broken one.
+              // Not offered when the timeline has no order to be written out
+              // in — genuinely simultaneous clips, or an overlap the handover
+              // rule cannot describe. A dissolve is fine: it goes in the piece
+              // it starts in (`segmentsOf`). The reason is right underneath —
+              // a control that greys out without saying why is
+              // indistinguishable from a broken one.
               disabled={busy || separateBlock !== null}
               onClick={() => setMode('separate')}
               label={separateBlock ? 'Separate files' : `Separate files — ${pieceCount}`}

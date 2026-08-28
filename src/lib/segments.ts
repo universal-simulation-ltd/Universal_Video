@@ -29,7 +29,7 @@
  * `exportRoute`.
  */
 
-import { clipDuration, clipsOverlap, type Clip, type Timeline } from '@unisim/media'
+import { clipSpan, type Clip, type Timeline } from '@unisim/media'
 import { sourceOf } from './edit'
 
 export type ExportMode = 'one' | 'separate'
@@ -57,11 +57,14 @@ export interface Segment {
  * memory refusal follows, and for the same reason: a greyed-out control with no
  * explanation is indistinguishable from a broken one.
  *
- * The rules are deliberately strict. Separate files means "this instant belongs
- * to exactly one piece", and a stacked or dissolving timeline has instants that
- * belong to two. Rather than invent an answer for those (which file does a
- * crossfade go in?) the mode is simply not offered until the timeline is the
- * plain row of cuts the feature is for.
+ * The rule is "this instant belongs to exactly one piece" — NOT "nothing
+ * interesting is happening". A dissolve used to be refused because a crossfade
+ * belongs to two pieces at once; that is now answered rather than dodged (see
+ * `segmentsOf`): the dissolve renders into the piece it STARTS in, and the
+ * piece it lands in begins after it. James's call, 2026-08-28.
+ *
+ * What is still refused is genuine simultaneity: two clips on different tracks
+ * play at the same moment for real, and no ordering of files reproduces that.
  */
 export function separateBlocked(timeline: Timeline): string | null {
   const clips = timeline.clips
@@ -75,42 +78,114 @@ export function separateBlocked(timeline: Timeline): string | null {
     return 'Separate files needs one row of clips. Two stacked clips play at the same moment, so they cannot be two files — slide the top one down beside the others first.'
   }
 
-  if (clips.some((c) => c.transitionIn || c.transitionOut)) {
-    return 'Separate files needs no transitions. A crossfade belongs to two pieces at once, so there is no file to put it in — take the transitions off, or export as one video.'
-  }
-
-  // Reachable without a transition only by an unusual sequence of drags, but a
-  // silent duplicate of the overlapping seconds in two files would be worse
-  // than a refusal that says so.
-  const overlapping = clips.some((a, i) => clips.some((b, j) => j > i && clipsOverlap(a, b)))
-  if (overlapping) {
-    return 'Two clips overlap in time, so the same moment would end up in two files. Slide them apart first, or export as one video.'
+  // Overlaps are allowed — that is what a crossfade IS here (`applyCrossfade`
+  // slides the incoming clip back over its neighbour on the SAME track). What
+  // is not allowed is an overlap the handover rule cannot describe: the rule
+  // hands one dissolve from each clip to its immediate successor, so a clip
+  // buried inside another, or three clips sharing an instant, has no answer.
+  const ordered = [...clips].sort((a, b) => a.startSec - b.startSec)
+  for (let i = 0; i < ordered.length; i++) {
+    const a = clipSpan(ordered[i])
+    for (let j = i + 1; j < ordered.length; j++) {
+      const b = clipSpan(ordered[j])
+      if (b.start >= a.end - EPS) break // ordered by start: nothing later overlaps either
+      if (j !== i + 1) {
+        return 'Three clips overlap at the same moment, so there is no order to write them out in. Slide them apart until each one only meets its neighbour, or export as one video.'
+      }
+      if (b.end <= a.end + EPS) {
+        return 'One clip sits entirely inside another, so it has no piece of its own. Slide it out past the end of the clip underneath it, or export as one video.'
+      }
+    }
   }
 
   return null
 }
 
-/** The pieces, in timeline order. Empty when `separateBlocked()` says no. */
+/** Timeline seconds are floats off a decoder; comparisons need a hair of slack. */
+const EPS = 1e-6
+
+/**
+ * The pieces, in timeline order. Empty when `separateBlocked()` says no.
+ *
+ * ── The handover rule, which is the only interesting thing in here ──────────
+ *
+ * A dissolve is two clips overlapping in time, and the question that kept this
+ * feature refusing them was "which file does the crossfade go in?". The answer
+ * taken (James, 2026-08-28) is: **the piece it STARTS in.**
+ *
+ * So for clips A and B overlapping over [s, e]:
+ *
+ *     A's piece covers  A.start → A.end   and CONTAINS B's head over [s, e],
+ *                                          so the dissolve actually renders
+ *     B's piece covers  A.end   → B.end   — it begins where the dissolve ended
+ *
+ * Every instant is therefore in exactly one file, the dissolve appears exactly
+ * once, and it appears where the viewer expects it: at the end of the piece
+ * they were watching. Playing the pieces back to back reproduces the edit.
+ *
+ * ⚠️ A dissolving piece is the ONE case where a piece is not a single clip, so
+ * it does not take the `compress` route described in the header — it composes,
+ * like the joined export does. That is a slower path but not a new one.
+ *
+ * ⚠️ `transitionIn` is stripped from the clip whose head was handed over, and
+ * `transitionOut` from the borrowed head. Leaving either on plays the same
+ * dissolve twice, once in each file, which is precisely the duplication this
+ * whole rule exists to prevent.
+ */
 export function segmentsOf(timeline: Timeline): Segment[] {
   if (separateBlocked(timeline)) return []
 
   const ordered = [...timeline.clips].sort((a, b) => a.startSec - b.startSec)
 
   return ordered.map((clip, i) => {
+    const span = clipSpan(clip)
+    const next = ordered[i + 1]
+    const nextSpan = next ? clipSpan(next) : null
+
+    // Where this piece begins: after any dissolve the PREVIOUS piece has
+    // already rendered.
+    const from = i > 0 ? Math.max(span.start, clipSpan(ordered[i - 1]).end) : span.start
+    const to = span.end
+    const headCut = Math.max(0, from - span.start)
+
+    const main: Clip = {
+      ...clip,
+      inSec: clip.inSec + headCut,
+      // The whole point — see the file header. Zero, so this is a trim and not
+      // a piece with a minute and a half of black in front of it.
+      startSec: 0,
+      transitionIn: headCut > EPS ? undefined : clip.transitionIn,
+    }
+
+    // The next clip's head, when it dissolves into this piece's tail. Truncated
+    // at this piece's end: only the overlapping seconds belong here.
+    const incoming: Clip | null =
+      next && nextSpan && nextSpan.start < to - EPS
+        ? {
+            ...next,
+            outSec: next.inSec + (to - nextSpan.start),
+            startSec: nextSpan.start - from,
+            transitionOut: undefined,
+          }
+        : null
+
+    const clips = incoming ? [main, incoming] : [main]
+    const used = new Set(clips.map((c) => c.sourceId))
     const source = sourceOf(timeline, clip)
+
     return {
       clip,
       index: i + 1,
-      name: segmentName(source?.name ?? 'clip', i + 1, ordered.length, clip.inSec),
-      durationSec: clipDuration(clip),
+      // The in-point AFTER the handover — where this piece really starts in the
+      // original, which is the question a name gets asked.
+      name: segmentName(source?.name ?? 'clip', i + 1, ordered.length, clip.inSec + headCut),
+      durationSec: to - from,
       timeline: {
         ...timeline,
-        // Only the source this piece is cut from. The others are not read, and
-        // the export's own memory story is simpler for it.
-        sources: source ? [source] : [],
-        // The whole point — see the file header. Zero, so this is a trim and
-        // not a piece with a minute and a half of black in front of it.
-        clips: [{ ...clip, startSec: 0 }],
+        // Only the sources this piece actually reads. The others are not
+        // touched, and the export's own memory story is simpler for it.
+        sources: timeline.sources.filter((s) => used.has(s.id)),
+        clips,
       },
     }
   })
