@@ -3,11 +3,17 @@
      Regenerate: node scripts/app-marks/build.mjs (from backoffice/universal-platform)
      Mark: Universal Video — A film frame with sprockets and a play mark. -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Universal Video">
-  <rect x="0" y="0" width="64" height="64" rx="14" fill="#0f172a"/>
-  <rect x="8" y="14" width="48" height="36" rx="5" fill="none" stroke-width="4" stroke="#fe8c01"/>
-  <rect x="13" y="19" width="6" height="6" rx="1.4" fill="#ff9a1f"/>
-  <rect x="13" y="39" width="6" height="6" rx="1.4" fill="#ff9a1f"/>
-  <rect x="45" y="19" width="6" height="6" rx="1.4" fill="#ff9a1f"/>
-  <rect x="45" y="39" width="6" height="6" rx="1.4" fill="#ff9a1f"/>
-  <path d="M27 24 L41 32 L27 40 Z" fill="#fe8c01"/>
+  <defs>
+    <linearGradient id="u-video-tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fe8c01"/>
+      <stop offset="1" stop-color="#e05504"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#u-video-tile)"/>
+  <rect x="8" y="14" width="48" height="36" rx="5" fill="none" stroke-width="4" stroke="#ffffff"/>
+  <rect x="13" y="19" width="6" height="6" rx="1.4" fill="#fed7aa"/>
+  <rect x="13" y="39" width="6" height="6" rx="1.4" fill="#fed7aa"/>
+  <rect x="45" y="19" width="6" height="6" rx="1.4" fill="#fed7aa"/>
+  <rect x="45" y="39" width="6" height="6" rx="1.4" fill="#fed7aa"/>
+  <path d="M27 24 L41 32 L27 40 Z" fill="#ffffff"/>
 </svg>

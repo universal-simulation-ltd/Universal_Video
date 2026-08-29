@@ -44,13 +44,19 @@ export default function ProductLogo() {
     >
       <style>{CSS}</style>
       <svg viewBox="0 0 64 64" className="h-6 w-6" aria-hidden="true">
-        <rect x="0" y="0" width="64" height="64" rx="14" fill="#0f172a" />
-        <rect x={8} y={14} width={48} height={36} rx={5} fill="none" strokeWidth={4} stroke="#fe8c01" />
-        <rect x={13} y={19} width={6} height={6} rx={1.4} fill="#ff9a1f" className="uam-video-sprocket1" />
-        <rect x={13} y={39} width={6} height={6} rx={1.4} fill="#ff9a1f" className="uam-video-sprocket2" />
-        <rect x={45} y={19} width={6} height={6} rx={1.4} fill="#ff9a1f" className="uam-video-sprocket3" />
-        <rect x={45} y={39} width={6} height={6} rx={1.4} fill="#ff9a1f" className="uam-video-sprocket4" />
-        <path d="M27 24 L41 32 L27 40 Z" fill="#fe8c01" className="uam-video-play" />
+        <defs>
+          <linearGradient id="uam-nav-video-tile" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#fe8c01" />
+            <stop offset="1" stopColor="#e05504" />
+          </linearGradient>
+        </defs>
+        <rect width="64" height="64" rx="14" fill="url(#uam-nav-video-tile)" />
+        <rect x={8} y={14} width={48} height={36} rx={5} fill="none" strokeWidth={4} stroke="#ffffff" />
+        <rect x={13} y={19} width={6} height={6} rx={1.4} fill="#fed7aa" className="uam-video-sprocket1" />
+        <rect x={13} y={39} width={6} height={6} rx={1.4} fill="#fed7aa" className="uam-video-sprocket2" />
+        <rect x={45} y={19} width={6} height={6} rx={1.4} fill="#fed7aa" className="uam-video-sprocket3" />
+        <rect x={45} y={39} width={6} height={6} rx={1.4} fill="#fed7aa" className="uam-video-sprocket4" />
+        <path d="M27 24 L41 32 L27 40 Z" fill="#ffffff" className="uam-video-play" />
       </svg>
     </span>
   )
