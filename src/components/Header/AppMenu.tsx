@@ -1,3 +1,4 @@
+import { AdvancedMenu } from '@unisim/sdk'
 import { hrefFor, navigate } from '../../lib/route'
 import { useEditorStore } from '../../stores/editorStore'
 import { useThemeStore, type ThemePref } from '../../stores/themeStore'
@@ -57,6 +58,18 @@ export default function AppMenu() {
         label="More info"
         href={hrefFor('more-info')}
         onNavigate={() => navigate('more-info')}
+      />
+
+      {/* Advanced — the SDK's own category, so every app in the suite has one in
+          the same place, and whatever goes in it next is one change rather than
+          nineteen. "About this app" is always its last row. */}
+      <AdvancedMenu
+        about={{
+          repo:    'https://github.com/universal-simulation-ltd/Universal_Video',
+          proof:   'https://github.com/universal-simulation-ltd/Universal_Video/blob/main/PRIVACY.md',
+          subject: 'Your video',
+          version: __APP_VERSION__,
+        }}
       />
     </>
   )
