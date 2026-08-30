@@ -20,6 +20,42 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* ── A 16px floor on every text control, on touch pointers only ──────────────
+   iOS Safari zooms the page in when a focused form control's font-size is under
+   16px, and it never zooms back out. Every field in this app is smaller than
+   that — the export format and resolution pickers are `text-[13px]`, the
+   Inspector's in/out and crop boxes `text-[12px]` — so tapping one left the
+   editor scrolled sideways with the timeline running off the right-hand edge,
+   and the only way back was a pinch.
+
+   ⚠️ NOT fixed with `maximum-scale=1` / `user-scalable=no` on the viewport meta:
+   pinch-zoom is an accessibility feature and locking it out is the wrong trade.
+   `index.html` deliberately stays `width=device-width, initial-scale=1.0,
+   viewport-fit=cover`.
+
+   Scoped to coarse pointers so the desktop type scale is untouched, and written
+   as `max(16px, 1em)` so anything already larger keeps its size.
+
+   `!important` is load-bearing rather than lazy: the floor has to beat a
+   `text-[13px]` utility sitting directly on the element, and — the case no
+   specificity can reach — the language `<select>` in the SDK's profile dropdown
+   carries an INLINE `fontSize: 12` (`UserProfile.js` → `languageSelectStyle`).
+   An inline declaration outranks every author rule that is not important, so
+   without the flag the trap stays in the app by another door.
+
+   Controls that never take a caret are excluded — they don't trigger the zoom,
+   and some of them size their own chrome off font-size. `range` matters here:
+   it is the player's scrub bar and the Inspector's volume slider.
+
+   The same block is in Universal_QR, Universal_Compress and Universal_PDF. */
+@media (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([type='file']):not([type='button']):not([type='submit']):not([type='reset']),
+  textarea,
+  select {
+    font-size: max(16px, 1em) !important;
+  }
+}
+
 /* Sizes, durations, frame counts and percentages all sit in running text and
    all change while the encoder runs. Tabular figures stop the line reflowing
    several times a second, which reads as flicker. */

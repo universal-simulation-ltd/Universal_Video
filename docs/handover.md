@@ -1301,3 +1301,63 @@ demuxer; and the cancel path.
 past 4 GB — the Zip64 layout is asserted on the header writers directly, because
 streaming 5 GB through a CRC to prove a field offset would take minutes and
 prove nothing more.
+
+---
+
+## 18. Tapping a field no longer zooms iOS in and leaves it there — 2026-08-30
+
+One rule, in `src/index.css`, and nothing else changed:
+
+```css
+@media (pointer: coarse) {
+  input:not([type='checkbox'])…:not([type='reset']), textarea, select {
+    font-size: max(16px, 1em) !important;
+  }
+}
+```
+
+**What it fixes.** iOS Safari zooms the page in whenever a focused form control
+computes to under 16px, and it does not zoom back out. Every field in the editor
+was under it: the export panel's **Output frame** and **Resolution** pickers at
+`text-[13px]`, and the Inspector's **Starts at / In point / Out point**, the two
+transition pickers and their length boxes at `text-[12px]`. So the first tap on
+any of them left the editor magnified with the timeline running off the
+right-hand edge, and the only way back was a pinch. Measured in a 390×844 touch
+context against the built app: 12/13px before, 16px after; at 1440×900 they are
+still 12/13px, so the desktop type scale is untouched.
+
+**Three things about the rule that are not style preferences.**
+
+- **`!important` is load-bearing.** It has to beat a `text-[13px]` utility
+  sitting directly on the element, and — the case no specificity can reach — the
+  language `<select>` the SDK renders in the profile dropdown, which carries an
+  INLINE `fontSize: 12` (`UserProfile.js` → `languageSelectStyle`). An inline
+  declaration outranks any author rule that is not important. That select is in
+  the DOM of every page of this app, signed in or not.
+- **`range` is excluded on purpose.** It is the player's scrub bar and the
+  Inspector's volume slider; neither opens a keyboard, and Chromium sizes some
+  of a range's chrome off its font-size.
+- **The viewport meta was NOT touched.** `maximum-scale=1` / `user-scalable=no`
+  would also stop the zoom, and would take pinch-zoom away from everyone who
+  needs it. `index.html` stays `width=device-width, initial-scale=1.0,
+  viewport-fit=cover`.
+
+**Two defects this app turned out NOT to have**, checked rather than assumed:
+
+- **No dialog of its own.** The only dialog reachable here is the SDK's
+  `<AboutAppDialog>`, which portals to `document.body` and sets its own z-index
+  above the nav bar; hit-tested at 390×844 with `document.elementFromPoint`, its
+  title and close button are the elements at their own centres. Nothing in
+  `src/` renders a `fixed inset-0` overlay, so there was no `z-50`-under-the-
+  navbar bug to fix here.
+- **The dead band under the nav bar was already closed** in `4b27a33`
+  (`empty:hidden` on the `<UpdateNotice />` wrapper). Re-measured: that div is
+  `display: none`, height 0.
+
+**⚠️ A bounding box is not an occlusion check.** Everything above was verified
+with `document.elementFromPoint` over the middle of each element, not with a
+rect assertion — a rect can be perfectly on screen while something else paints
+over it. And font sizes must be read BEFORE any `page.screenshot({ fullPage:
+true })`: a full-page capture in a mobile-emulated context drops Chromium's
+device-metrics override, after which `(pointer: coarse)` stops matching and
+every size reads back at its desktop value.
