@@ -445,7 +445,12 @@ test.describe('Universal Video', () => {
     await mobile.goto('/')
     navigations = 0
 
-    await mobile.getByText('Universal Video', { exact: true }).first().tap()
+    // Match either wordmark: since @unisim/sdk 0.123.3 the narrow bar stacks a
+    // small "UNI SIM" eyebrow above the SHORT name ("Video"), so that one logo
+    // sits beside the app icon instead of two. Desktop still spells out
+    // "Universal Video". The gesture under test is the same either way, so the
+    // selector accepts both rather than pinning one breakpoint's copy.
+    await mobile.getByText(/^(Universal )?Video$/).first().tap()
     await expect(mobile.getByRole('menu')).toBeVisible()
     // The whole point: the menu came up and the page did not go anywhere.
     expect(navigations).toBe(0)
