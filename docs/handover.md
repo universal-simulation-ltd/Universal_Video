@@ -1361,3 +1361,35 @@ over it. And font sizes must be read BEFORE any `page.screenshot({ fullPage:
 true })`: a full-page capture in a mobile-emulated context drops Chromium's
 device-metrics override, after which `(pointer: coarse)` stops matching and
 every size reads back at its desktop value.
+
+## 19. The ✕ was a hollow box on the phone, and the manifest lied about an icon — 2026-08-30
+
+Two one-line defects, both invisible from any desktop browser, both found by a
+suite-wide sweep rather than by using the app.
+
+**`✕` (U+2715) has no glyph in iOS's system font.** WebKit does not fall back
+to another font for it even though the stack ends in `sans-serif` — it stops at
+the system font and draws `.notdef`, so the character renders as a hollow `▯?▯`
+box. Measured in an iPhone 17 simulator on 2026-08-30 (see the suite
+`landmines.md`, "iOS has no glyph for ✕, ✖, ╳ or 📇"). This app had exactly one
+call site — **Forget**, on a recent file in `Landing.tsx` — so the phone showed
+a hollow box where the only control for pruning the recents list should be. It
+is an inline SVG now; the button already carried an `aria-label`, so the SVG is
+`aria-hidden`.
+
+⚠️ **The related characters are not all broken and the difference is a
+variation selector.** Bare `⚙` (U+2699) is missing from the system font;
+`⚙️` (U+2699 U+FE0F) forces emoji presentation, comes from the emoji font and is
+fine. Do not sweep the second one. `×` (U+00D7) also renders, and is the
+acceptable fallback where an SVG would be disproportionate.
+
+**The web manifest declared `unisim-icon.png` as `128x128`; the file is
+1024×1024.** A browser picks an icon by the size the manifest CLAIMS, so the
+largest icon this app ships was only ever a candidate for slots up to 128px —
+and was then scaled from a 1MP source when it was used at all. `vite.config.ts`
+declares the true size now, verified in the built
+`dist/manifest.webmanifest`. This was a suite-wide copy-paste; only this app
+carried it among Images, PDF, Date Polling, Webinar and Exports.
+
+Verified: typecheck clean, `eslint .` clean, `vitest run` 236 passed across 15
+files, `npm run build` green.
