@@ -54,7 +54,11 @@ export default defineConfig(({ mode }) => {
             { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
             { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
             { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-            { src: 'unisim-icon.png', sizes: '128x128', type: 'image/png', purpose: 'any' }
+            // ⚠️ 1024x1024 is what the file actually is. It was declared as
+            // 128x128, which is a lie the browser believes: it picks an icon
+            // by the DECLARED size, so this one was only ever considered for
+            // slots no bigger than 128px and then scaled from a 1MP source.
+            { src: 'unisim-icon.png', sizes: '1024x1024', type: 'image/png', purpose: 'any' }
           ]
         },
         workbox: {

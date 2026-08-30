@@ -190,7 +190,14 @@ export default function Landing() {
                         aria-label={`Forget ${r.name}`}
                         className="shrink-0 rounded px-2 py-1 text-slate-400 hover:text-red-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600"
                       >
-                        ✕
+                        {/* ⚠️ An SVG, not `✕` — U+2715 has no glyph in iOS's
+                            system font and WebKit does not fall back even
+                            though the stack ends in `sans-serif`, so the only
+                            way to forget a recent file drew as a hollow ▯?▯
+                            box on the phone. See the suite landmines. */}
+                        <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" aria-hidden="true">
+                          <path d="m4 4 8 8M12 4l-8 8" />
+                        </svg>
                       </button>
                     </li>
                   ))}
