@@ -161,7 +161,16 @@ export default function App() {
       {/* Renders nothing until this tab is genuinely running superseded code.
           See the SDK's useAppUpdate: an autoUpdate PWA hands the new worker
           control but leaves the running page on its old JavaScript. */}
-      <div className={`${CONTAINER} pt-4`}>
+      {/* ⚠️ `empty:hidden` is load-bearing, not tidiness. UpdateNotice renders
+          null unless this tab is genuinely running superseded code — which is
+          almost always — so the `pt-4` sat there permanently as a dead ~16px
+          band between the nav bar's bottom stroke and the page content. The
+          owner spotted it on the phone (2026-08-30) and was right that the
+          bar's own border is the separator. React puts no whitespace text
+          nodes between JSX children, so with the notice gone the div genuinely
+          matches `:empty` and collapses, padding and all; when a notice does
+          render, the padding comes back. */}
+      <div className={`${CONTAINER} pt-4 empty:hidden`}>
         <UpdateNotice />
       </div>
 
