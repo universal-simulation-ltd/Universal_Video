@@ -38,6 +38,57 @@
     <meta name="twitter:title" content="Clip, cut and resize a video without uploading it — Universal Video" />
     <meta name="twitter:description" content="Trim, cut, reframe and shrink MP4, M4V and MOV in your browser. Nothing is uploaded, no account, no size cap." />
     <meta name="twitter:image" content="https://opensource.unisim.co.uk/video/icon-512.png" />
+    <!-- Structured data. The credit James asked for on 2026-09-05 lives in two
+         places, and this is the one a search engine can read: the in-app line
+         is in the SDK's <AboutAppDialog>, which is a React portal and only
+         enters the DOM once somebody opens it, so a crawler never sees it.
+
+         Every value below is taken from THIS FILE's own <title>, description
+         and canonical rather than typed again, so the block cannot drift from
+         what the page already says about itself. The author matches the app's
+         marketing page on unisim.co.uk and points at the same /about-james,
+         so both resolve to one person rather than two mentions of a name. -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Universal Video",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web browser",
+      "url": "https://opensource.unisim.co.uk/video/",
+      "description": "Clip, cut and resize a video without uploading it. Universal Video trims, cuts and reframes MP4, M4V and MOV on a real timeline inside your browser — and it will compress a video without uploading it too. Nothing is sent to a server: no account, no file-size cap, no watermark and no queue. Free and open source.",
+      "isAccessibleForFree": true,
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "GBP"
+      },
+      "author": [
+        {
+          "@type": "Person",
+          "name": "James Markey",
+          "honorificSuffix": "MBE",
+          "jobTitle": "Founder & Director",
+          "url": "https://www.unisim.co.uk/about-james"
+        },
+        {
+          "@type": "Organization",
+          "name": "UNI·SIM",
+          "url": "https://www.unisim.co.uk",
+          "subjectOf": {
+            "@type": "BlogPosting",
+            "name": "Welcome to the UNI·SIM studio",
+            "url": "https://www.unisim.co.uk/blog/welcome-to-uni-sim"
+          }
+        }
+      ],
+      "provider": {
+        "@type": "Organization",
+        "name": "UNI·SIM",
+        "url": "https://www.unisim.co.uk"
+      }
+    }
+    </script>
   </head>
   <body>
     <div id="root"></div>
