@@ -1,4 +1,9 @@
 import { AdvancedMenu } from '@unisim/sdk'
+// Generated — `npm run credits` after any dependency change. Never edit it by
+// hand: it is read off the installed tree, so a hand-kept list drifts from the
+// lockfile the first time anyone upgrades anything, and a credits list naming a
+// package we removed is worse than no list at all.
+import credits from '../../generated/credits.json'
 import { hrefFor, navigate } from '../../lib/route'
 import { useEditorStore } from '../../stores/editorStore'
 import { useThemeStore, type ThemePref } from '../../stores/themeStore'
@@ -69,6 +74,8 @@ export default function AppMenu() {
           proof:   'https://github.com/universal-simulation-ltd/Universal_Video/blob/main/PRIVACY.md',
           subject: 'Your video',
           version: __APP_VERSION__,
+          credits,
+          noticesHref: 'https://github.com/universal-simulation-ltd/Universal_Video/blob/main/THIRD-PARTY-NOTICES.md',
         }}
       />
     </>
