@@ -286,4 +286,4 @@ The long-form argument for all four is §10 of `Docs_UNI_SIM/next-products.md`.
 
 ## Licence
 
-MIT © 2026 James Markey. See [`LICENSE`](LICENSE).
+AGPL-3.0-or-later, with an added permission for app-store distribution. © 2026 James Markey. See [`LICENSE`](LICENSE).
