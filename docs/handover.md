@@ -1393,3 +1393,30 @@ carried it among Images, PDF, Date Polling, Webinar and Exports.
 
 Verified: typecheck clean, `eslint .` clean, `vitest run` 236 passed across 15
 files, `npm run build` green.
+
+## 20. The "More options" fold reveals itself, and the SDK owns that now — 2026-09-09
+
+`Landing.tsx`'s `<details>` carried its own `onToggle` +
+`scrollIntoView({ behavior: 'smooth', block: 'end' })`. It is gone (`f5d788a`).
+Since `@unisim/sdk` **0.139.0**, `UniversalProvider` installs the behaviour for
+every product in the suite, so an opening fold scrolls its contents onto the
+screen with nothing wired up per app.
+
+The shared one is also the better one, which is the part worth carrying:
+`block: 'end'` aligns the fold's **bottom** to the bottom of the screen, so on a
+phone it shoves the summary you just clicked off the **top** — the user's anchor
+disappears in the act of answering them. The SDK moves by the smallest amount
+that brings the contents on screen, never moves the clicked row, and does
+nothing at all when the fold already fits.
+
+⚠️ **Do not add a scroll handler to a new `<details>` here** — it will fight the
+document-level listener. A state-driven collapsible is covered only when its
+trigger carries `aria-expanded` **and** `aria-controls`; with no `aria-controls`
+the SDK deliberately leaves it alone, because nothing on the page says which box
+is its panel. Full note: `packages/sdk/README.md` → *"Collapsibles that show
+what is inside them"*, and `Docs_UNI_SIM/landmines.md`.
+
+Verified: nothing was driven in a browser for this app — the handler was deleted
+and the app built. The geometry was proved in the SDK's own
+`npm run test:reveal-on-expand` (six browser cases plus a negative control) and
+measured in Universal Family at 390×844.
