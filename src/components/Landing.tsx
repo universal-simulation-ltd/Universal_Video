@@ -273,14 +273,12 @@ export default function Landing() {
             }}
           />
 
-          <details
-            className="group mt-3"
-            onToggle={(e) => {
-              if (!e.currentTarget.open) return
-              const el = e.currentTarget
-              requestAnimationFrame(() => el.scrollIntoView({ behavior: 'smooth', block: 'end' }))
-            }}
-          >
+          {/* No onToggle scroll here any more: @unisim/sdk >= 0.139.0 scrolls
+              an opening fold into view for every product, and it does it better
+              than the `block: 'end'` this used to do — that aligned the BOTTOM
+              to the bottom, which shoves the summary you just clicked off the
+              top of a small screen. */}
+          <details className="group mt-3">
             <summary className="flex cursor-pointer select-none list-none items-center gap-2 px-1 py-1 text-xs font-medium uppercase tracking-wide text-slate-500 transition-colors hover:text-slate-700 dark:hover:text-slate-300">
               <span>More options</span>
               <span
