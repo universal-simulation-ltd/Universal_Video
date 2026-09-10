@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { DropRing, UniversalAppsNavBar, UpdateNotice } from '@unisim/sdk'
-import UsageTracker from './UsageTracker'
+// <UsageTracker /> sends one "session.opened" row for a signed-in visitor. No
+// event may carry a filename, a duration, a resolution or a byte count: this
+// app's whole claim is that we never see the file.
+import { UsageTracker } from '@unisim/sdk'
 import AppMenu from './components/Header/AppMenu'
 import ProductLogo from './components/Header/ProductLogo'
 import Landing from './components/Landing'
