@@ -18,6 +18,7 @@ import ResultCard from './components/ResultCard'
 import MoreInfo from './components/MoreInfo'
 import { NAVIGATED, currentRoute, type Route } from './lib/route'
 import { useEditorStore } from './stores/editorStore'
+import { useThemeStore } from './stores/themeStore'
 
 // The single page container. The navbar (via the SDK's `contentClassName`), the
 // page body and the footer all share it, so the suite switcher lines up with
@@ -98,6 +99,7 @@ export default function App() {
   const removeSelected = useEditorStore((s) => s.removeSelected)
   const setPlaying = useEditorStore((s) => s.setPlaying)
   const playing = useEditorStore((s) => s.playing)
+  const theme = useThemeStore((s) => s.effective)
 
   // Probe H.264 encode support once, on arrival, so a Firefox visitor is told
   // before they pick a file rather than after waiting through one.
@@ -158,6 +160,10 @@ export default function App() {
         productLogo={<ProductLogo />}
         actions={<AppMenu />}
         actionsLabel="Video"
+        // The RESOLVED theme. Until 2026-09-14 the bar was never told it, so in
+        // dark mode the whole bar and its dropdown stayed white over a dark
+        // page — the only app with dark mode where that was so.
+        theme={theme}
         suiteSwitcherIconSrc={`${import.meta.env.BASE_URL}unisim-icon.png`}
       />
 

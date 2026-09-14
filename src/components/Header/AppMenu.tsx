@@ -1,4 +1,4 @@
-import { AdvancedMenu } from '@unisim/sdk'
+import { AdvancedMenu, MENU } from '@unisim/sdk'
 // Generated — `npm run credits` after any dependency change. Never edit it by
 // hand: it is read off the installed tree, so a hand-kept list drifts from the
 // lockfile the first time anyone upgrades anything, and a credits list naming a
@@ -16,9 +16,23 @@ import { useThemeStore, type ThemePref } from '../../stores/themeStore'
 // Styling is inline rather than Tailwind to match the SDK dropdown's own rows
 // (the same 8px/14px rhythm and 13px label the profile and language rows use) —
 // these render inside SDK chrome, not ours.
+//
+// ⚠️ They also have to follow the SDK's THEME. The bar is given the app's theme
+// (Landing), so in dark mode these rows sit on the SDK's dark surface — and
+// until 2026-09-14 they kept their light-mode greys there, and the Advanced
+// section below was never told the theme at all, so it drew as a pale strip in
+// the middle of a dark menu. Light keeps its original colours exactly; dark
+// takes the SDK's own dark menu palette.
 
-const TINT = { bg: '#fff7ed', fg: '#c2410c' }
-const REST_COLOR = '#374151'
+type Colours = { tintBg: string; tintFg: string; rest: string; label: string; disabled: string }
+
+function coloursFor(theme: 'light' | 'dark'): Colours {
+  if (theme === 'dark') {
+    const p = MENU.dark
+    return { tintBg: p.accentBg, tintFg: p.accentText, rest: p.body, label: p.faint, disabled: p.faint }
+  }
+  return { tintBg: '#fff7ed', tintFg: '#c2410c', rest: '#374151', label: '#9ca3af', disabled: '#9ca3af' }
+}
 
 const THEMES: { pref: ThemePref; label: string; glyph: string }[] = [
   { pref: 'light', label: 'Light', glyph: '☀️' },
@@ -32,33 +46,38 @@ export default function AppMenu() {
   const status = useEditorStore((s) => s.status)
   const pref = useThemeStore((s) => s.pref)
   const setPref = useThemeStore((s) => s.setPref)
+  const theme = useThemeStore((s) => s.effective)
+  const c = coloursFor(theme)
 
   return (
     <>
-      <MenuLabel>This edit</MenuLabel>
+      <MenuLabel c={c}>This edit</MenuLabel>
       <MenuRow
+        c={c}
         glyph="🗑️"
         label="Start again"
         onClick={reset}
         disabled={status === 'empty' || status === 'exporting'}
       />
-      <MenuLabel>Appearance</MenuLabel>
+      <MenuLabel c={c}>Appearance</MenuLabel>
       {THEMES.map((t) => (
         <MenuRow
           key={t.pref}
+          c={c}
           glyph={t.glyph}
           label={t.label}
           selected={pref === t.pref}
           onClick={() => setPref(t.pref)}
         />
       ))}
-      <MenuLabel>About</MenuLabel>
+      <MenuLabel c={c}>About</MenuLabel>
       {/* ⚠️ A LINK, not a button. This is the only way to the spec sheet now
           that it is off the editor page, so it has to behave like a way to a
           page: middle-click opens a tab, "copy link address" copies something
           that works, and a crawler can follow it. `navigate()` intercepts the
           ordinary click so the timeline survives the trip — see `lib/route.ts`. */}
       <MenuLink
+        c={c}
         glyph="ℹ️"
         label="More info"
         href={hrefFor('more-info')}
@@ -69,6 +88,7 @@ export default function AppMenu() {
           the same place, and whatever goes in it next is one change rather than
           nineteen. "About this app" is always its last row. */}
       <AdvancedMenu
+        theme={theme}
         about={{
           repo:    'https://github.com/universal-simulation-ltd/Universal_Video',
           proof:   'https://github.com/universal-simulation-ltd/Universal_Video/blob/main/PRIVACY.md',
@@ -82,7 +102,7 @@ export default function AppMenu() {
   )
 }
 
-function MenuLabel({ children }: { children: string }) {
+function MenuLabel({ c, children }: { c: Colours; children: string }) {
   return (
     <div
       style={{
@@ -91,7 +111,7 @@ function MenuLabel({ children }: { children: string }) {
         fontWeight: 600,
         letterSpacing: '0.06em',
         textTransform: 'uppercase',
-        color: '#9ca3af',
+        color: c.label,
       }}
     >
       {children}
@@ -104,11 +124,13 @@ function MenuLabel({ children }: { children: string }) {
  * element, because the difference matters to the browser and to a crawler.
  */
 function MenuLink({
+  c,
   glyph,
   label,
   href,
   onNavigate,
 }: {
+  c: Colours
   glyph: string
   label: string
   href: string
@@ -137,18 +159,18 @@ function MenuLink({
         textDecoration: 'none',
         border: 0,
         background: 'transparent',
-        color: REST_COLOR,
+        color: c.rest,
         cursor: 'pointer',
         boxSizing: 'border-box',
         transition: 'background 120ms, color 120ms',
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.background = TINT.bg
-        e.currentTarget.style.color = TINT.fg
+        e.currentTarget.style.background = c.tintBg
+        e.currentTarget.style.color = c.tintFg
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.background = 'transparent'
-        e.currentTarget.style.color = REST_COLOR
+        e.currentTarget.style.color = c.rest
       }}
     >
       <span aria-hidden>{glyph}</span>
@@ -158,12 +180,14 @@ function MenuLink({
 }
 
 function MenuRow({
+  c,
   glyph,
   label,
   onClick,
   selected = false,
   disabled = false,
 }: {
+  c: Colours
   glyph: string
   label: string
   onClick: () => void
@@ -186,26 +210,26 @@ function MenuRow({
         fontFamily: 'inherit',
         textAlign: 'left',
         border: 0,
-        background: selected ? TINT.bg : 'transparent',
-        color: disabled ? '#9ca3af' : selected ? TINT.fg : REST_COLOR,
+        background: selected ? c.tintBg : 'transparent',
+        color: disabled ? c.disabled : selected ? c.tintFg : c.rest,
         cursor: disabled ? 'default' : 'pointer',
         opacity: disabled ? 0.6 : 1,
         transition: 'background 120ms, color 120ms',
       }}
       onMouseEnter={(e) => {
         if (disabled) return
-        e.currentTarget.style.background = TINT.bg
-        e.currentTarget.style.color = TINT.fg
+        e.currentTarget.style.background = c.tintBg
+        e.currentTarget.style.color = c.tintFg
       }}
       onMouseLeave={(e) => {
         if (disabled) return
-        e.currentTarget.style.background = selected ? TINT.bg : 'transparent'
-        e.currentTarget.style.color = selected ? TINT.fg : REST_COLOR
+        e.currentTarget.style.background = selected ? c.tintBg : 'transparent'
+        e.currentTarget.style.color = selected ? c.tintFg : c.rest
       }}
     >
       <span aria-hidden>{glyph}</span>
       <span style={{ flex: 1, minWidth: 0, fontWeight: 500, lineHeight: 1.3 }}>{label}</span>
-      {selected && <span aria-hidden style={{ color: TINT.fg }}>✓</span>}
+      {selected && <span aria-hidden style={{ color: c.tintFg }}>✓</span>}
     </button>
   )
 }
