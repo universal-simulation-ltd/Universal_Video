@@ -164,6 +164,10 @@ export default function App() {
         // dark mode the whole bar and its dropdown stayed white over a dark
         // page — the only app with dark mode where that was so.
         theme={theme}
+        // App preferences' Colour scheme row: this app's override of the
+        // Global preference (absent = follow global). Replaces the Appearance
+        // rows AppMenu used to carry.
+        themeStore={useThemeStore}
         suiteSwitcherIconSrc={`${import.meta.env.BASE_URL}unisim-icon.png`}
       />
 

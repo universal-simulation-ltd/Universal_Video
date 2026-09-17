@@ -6,7 +6,7 @@ import { AdvancedMenu, MENU } from '@unisim/sdk'
 import credits from '../../generated/credits.json'
 import { hrefFor, navigate } from '../../lib/route'
 import { useEditorStore } from '../../stores/editorStore'
-import { useThemeStore, type ThemePref } from '../../stores/themeStore'
+import { useThemeStore } from '../../stores/themeStore'
 
 // The per-app rows that slot into <UniversalAppsNavBar />'s `actions` prop —
 // ROWS ONLY, no trigger and no panel of its own. The SDK renders them inside
@@ -23,6 +23,11 @@ import { useThemeStore, type ThemePref } from '../../stores/themeStore'
 // section below was never told the theme at all, so it drew as a pale strip in
 // the middle of a dark menu. Light keeps its original colours exactly; dark
 // takes the SDK's own dark menu palette.
+//
+// There is no Appearance section here any more. Since SDK 0.143.0 the colour
+// scheme is a Global preference, and this app's override of it (Follow global
+// / Light / Dark / System) is the Colour scheme row in the SDK's App
+// preferences — App.tsx hands the bar `themeStore` for that.
 
 type Colours = { tintBg: string; tintFg: string; rest: string; label: string; disabled: string }
 
@@ -34,18 +39,9 @@ function coloursFor(theme: 'light' | 'dark'): Colours {
   return { tintBg: '#fff7ed', tintFg: '#c2410c', rest: '#374151', label: '#9ca3af', disabled: '#9ca3af' }
 }
 
-const THEMES: { pref: ThemePref; label: string; glyph: string }[] = [
-  { pref: 'light', label: 'Light', glyph: '☀️' },
-  { pref: 'dark', label: 'Dark', glyph: '🌙' },
-  // 'system' is offered but is deliberately NOT the default — see themeStore.
-  { pref: 'system', label: 'Match my device', glyph: '🖥️' },
-]
-
 export default function AppMenu() {
   const reset = useEditorStore((s) => s.reset)
   const status = useEditorStore((s) => s.status)
-  const pref = useThemeStore((s) => s.pref)
-  const setPref = useThemeStore((s) => s.setPref)
   const theme = useThemeStore((s) => s.effective)
   const c = coloursFor(theme)
 
@@ -59,17 +55,6 @@ export default function AppMenu() {
         onClick={reset}
         disabled={status === 'empty' || status === 'exporting'}
       />
-      <MenuLabel c={c}>Appearance</MenuLabel>
-      {THEMES.map((t) => (
-        <MenuRow
-          key={t.pref}
-          c={c}
-          glyph={t.glyph}
-          label={t.label}
-          selected={pref === t.pref}
-          onClick={() => setPref(t.pref)}
-        />
-      ))}
       <MenuLabel c={c}>About</MenuLabel>
       {/* ⚠️ A LINK, not a button. This is the only way to the spec sheet now
           that it is off the editor page, so it has to behave like a way to a
