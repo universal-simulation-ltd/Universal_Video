@@ -1,9 +1,4 @@
-import { AdvancedMenu, MENU } from '@unisim/sdk'
-// Generated — `npm run credits` after any dependency change. Never edit it by
-// hand: it is read off the installed tree, so a hand-kept list drifts from the
-// lockfile the first time anyone upgrades anything, and a credits list naming a
-// package we removed is worse than no list at all.
-import credits from '../../generated/credits.json'
+import { MENU } from '@unisim/sdk'
 import { hrefFor, navigate } from '../../lib/route'
 import { useEditorStore } from '../../stores/editorStore'
 import { useThemeStore } from '../../stores/themeStore'
@@ -19,9 +14,7 @@ import { useThemeStore } from '../../stores/themeStore'
 //
 // ⚠️ They also have to follow the SDK's THEME. The bar is given the app's theme
 // (Landing), so in dark mode these rows sit on the SDK's dark surface — and
-// until 2026-09-14 they kept their light-mode greys there, and the Advanced
-// section below was never told the theme at all, so it drew as a pale strip in
-// the middle of a dark menu. Light keeps its original colours exactly; dark
+// until 2026-09-14 they kept their light-mode greys there. Light keeps its original colours exactly; dark
 // takes the SDK's own dark menu palette.
 //
 // There is no Appearance section here any more. Since SDK 0.143.0 the colour
@@ -67,21 +60,6 @@ export default function AppMenu() {
         label="More info"
         href={hrefFor('more-info')}
         onNavigate={() => navigate('more-info')}
-      />
-
-      {/* Advanced — the SDK's own category, so every app in the suite has one in
-          the same place, and whatever goes in it next is one change rather than
-          nineteen. "About this app" is always its last row. */}
-      <AdvancedMenu
-        theme={theme}
-        about={{
-          repo:    'https://github.com/universal-simulation-ltd/Universal_Video',
-          proof:   'https://github.com/universal-simulation-ltd/Universal_Video/blob/main/PRIVACY.md',
-          subject: 'Your video',
-          version: __APP_VERSION__,
-          credits,
-          noticesHref: 'https://github.com/universal-simulation-ltd/Universal_Video/blob/main/THIRD-PARTY-NOTICES.md',
-        }}
       />
     </>
   )

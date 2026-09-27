@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react'
-import { DropRing, UniversalAppsNavBar, UpdateNotice } from '@unisim/sdk'
+import { DropRing, UniversalAppsNavBar, UpdateNotice, type AboutAppConfig } from '@unisim/sdk'
+// Generated — `npm run credits` after any dependency change. Never edit it by
+// hand: it is read off the installed tree, so a hand-kept list drifts from the
+// lockfile the first time anyone upgrades anything, and a credits list naming a
+// package we removed is worse than no list at all.
+import credits from './generated/credits.json'
 // <UsageTracker /> sends one "session.opened" row for a signed-in visitor. No
 // event may carry a filename, a duration, a resolution or a byte count: this
 // app's whole claim is that we never see the file.
@@ -32,6 +37,18 @@ import { useThemeStore } from './stores/themeStore'
 export const CONTAINER = 'mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8'
 
 const REPO_URL = 'https://github.com/universal-simulation-ltd/Universal_Video'
+
+// "About this app". Since SDK 0.161 the SDK draws the row at the foot of "Tune
+// this app" and opens its own AboutAppDialog; it used to be the Advanced
+// section at the bottom of AppMenu.
+const ABOUT: AboutAppConfig = {
+  repo:    REPO_URL,
+  proof:   `${REPO_URL}/blob/main/PRIVACY.md`,
+  subject: 'Your video',
+  version: __APP_VERSION__,
+  credits,
+  noticesHref: `${REPO_URL}/blob/main/THIRD-PARTY-NOTICES.md`,
+}
 
 /**
  * One screen. The editor IS the app.
@@ -160,6 +177,7 @@ export default function App() {
         productLogo={<ProductLogo />}
         actions={<AppMenu />}
         actionsLabel="Video"
+        about={ABOUT}
         // The RESOLVED theme. Until 2026-09-14 the bar was never told it, so in
         // dark mode the whole bar and its dropdown stayed white over a dark
         // page — the only app with dark mode where that was so.
