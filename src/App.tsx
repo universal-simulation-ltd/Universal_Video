@@ -24,6 +24,7 @@ import MoreInfo from './components/MoreInfo'
 import { NAVIGATED, currentRoute, type Route } from './lib/route'
 import { useEditorStore } from './stores/editorStore'
 import { useThemeStore } from './stores/themeStore'
+import { KNOWLEDGE_BASE } from './knowledge'
 
 // The single page container. The navbar (via the SDK's `contentClassName`), the
 // page body and the footer all share it, so the suite switcher lines up with
@@ -177,6 +178,9 @@ export default function App() {
         productLogo={<ProductLogo />}
         actions={<AppMenu />}
         actionsLabel="Video"
+        // Actions ▸ Advanced ▸ Knowledge base (SDK 0.163.0): this app's own
+        // articles, bundled from ./knowledge so they read offline.
+        knowledgeBase={KNOWLEDGE_BASE}
         about={ABOUT}
         // The RESOLVED theme. Until 2026-09-14 the bar was never told it, so in
         // dark mode the whole bar and its dropdown stayed white over a dark
