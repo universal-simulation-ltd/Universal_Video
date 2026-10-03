@@ -68,6 +68,26 @@ export default function Player() {
   timelineRef.current = timeline
   playingRef.current = playing
 
+  // Revoking a blob: URL does not stop a <video> that already opened it: the
+  // element keeps its demuxer, decoder and buffered media until it is told to
+  // let go. When the player goes (Start again), release every one of them.
+  // ⚠️ Only once the edit is really gone: StrictMode's dev double-mount runs
+  // this cleanup with the elements still on screen and still needed.
+  useEffect(() => {
+    const media = mediaRef.current
+    return () => {
+      if (useEditorStore.getState().timeline.clips.length > 0) return
+      for (const el of media.values()) {
+        if (el instanceof HTMLVideoElement) {
+          el.pause()
+          el.removeAttribute('src')
+          el.load()
+        }
+      }
+      media.clear()
+    }
+  }, [])
+
   // The EXPORTED frame, not the timeline's raw one: the resolution cap scales
   // it, and the preview has to show the shape that will really come out.
   const frameWidth = useEditorStore(selectFrameWidth)
@@ -193,7 +213,19 @@ export default function Player() {
       const elapsed = (now - lastTickRef.current) / 1000
       lastTickRef.current = now
 
+      // Mid-export the encoder owns the main thread's spare time; a preview
+      // nobody is watching (the player is paused, the card says "Writing the
+      // file…") would only slow it down.
+      if (useEditorStore.getState().status === 'exporting') {
+        raf = requestAnimationFrame(tick)
+        return
+      }
+
       if (playingRef.current) {
+        // A seek made in the same breath as Play (Play from the end rewinds to
+        // 0) reaches the store before the effect below copies it here.
+        const stored = useEditorStore.getState().playheadSec
+        if (Math.abs(stored - headRef.current) > 0.001) headRef.current = stored
         const end = timelineDuration(timelineRef.current)
         const next = headRef.current + elapsed
         if (next >= end) {
@@ -240,6 +272,7 @@ export default function Player() {
           height={Math.max(2, Math.round(PREVIEW_W / (aspect || 16 / 9)))}
           data-testid="preview"
           data-frame={`${frameWidth}x${frameHeight}`}
+          role="img"
           aria-label="Preview of the edit"
           className="w-full rounded-xl bg-black"
         />
@@ -270,6 +303,7 @@ export default function Player() {
         step={0.01}
         value={Math.min(playheadSec, duration)}
         aria-label="Playhead"
+        aria-valuetext={`${timecode(Math.min(playheadSec, duration))} of ${timecode(duration)}`}
         data-testid="scrub"
         onChange={(e) => {
           setPlaying(false)
@@ -313,6 +347,18 @@ export default function Player() {
               src={asset.url}
               preload="auto"
               playsInline
+              // Without this, a file whose video this browser can't decode
+              // (HEVC on most non-Apple machines) is a silent black preview
+              // that only explains itself when the export fails.
+              onError={() => {
+                if (useEditorStore.getState().status === 'exporting') return
+                useEditorStore.setState({
+                  error:
+                    `${source.name} won’t play in this browser, so it shows as black. ` +
+                    'Its video is probably HEVC (H.265), which most browsers outside Apple’s can’t decode. ' +
+                    'Re-save it as H.264 (Most Compatible on an iPhone), or open the edit in Safari.',
+                })
+              }}
             />
           ) : (
             <img

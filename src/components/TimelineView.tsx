@@ -293,7 +293,6 @@ function ClipBlock({
   surfaceRef: RefObject<HTMLDivElement>
 }) {
   const timeline = useEditorStore((s) => s.timeline)
-  const playheadSec = useEditorStore((s) => s.playheadSec)
   const selected = useEditorStore((s) => s.selectedClipId === clip.id)
   const select = useEditorStore((s) => s.select)
   const drag = useEditorStore((s) => s.drag)
@@ -334,7 +333,9 @@ function ClipBlock({
       // Alt suspends it, which is the convention everywhere else and the only
       // way to deliberately place a clip 40 ms off its neighbour.
       const tolerance = e.altKey ? 0 : toleranceSecFor(pxPerSec)
-      const snap = snapStart(timeline, clip, dragState.startSec + dx, tolerance, playheadSec)
+      // Read, not subscribed: a subscription re-rendered every clip on every
+      // frame of playback for a number only a drag ever looks at.
+      const snap = snapStart(timeline, clip, dragState.startSec + dx, tolerance, useEditorStore.getState().playheadSec)
       setPreview({ startSec: snap.startSec, track: rows - 1 - row })
       setSnappedAt(snap.atSec)
       return
@@ -418,6 +419,8 @@ function ClipBlock({
           border and this selection ring, because they share a `Clip`. */}
       <button
         type="button"
+        data-clip=""
+        aria-pressed={selected}
         onPointerDown={onPointerDown('move')}
         onKeyDown={nudge}
         onClick={() => select(clip.id)}
@@ -448,8 +451,8 @@ function ClipBlock({
         </span>
       </button>
 
-      <Handle side="in" label={`Trim the start of ${name}`} onPointerDown={onPointerDown('in')} />
-      <Handle side="out" label={`Trim the end of ${name}`} onPointerDown={onPointerDown('out')} />
+      <Handle side="in" clipId={clip.id} label={`Trim the start of ${name}`} onPointerDown={onPointerDown('in')} />
+      <Handle side="out" clipId={clip.id} label={`Trim the end of ${name}`} onPointerDown={onPointerDown('out')} />
     </div>
     </>
   )
@@ -457,16 +460,19 @@ function ClipBlock({
 
 function Handle({
   side,
+  clipId,
   label,
   onPointerDown,
 }: {
   side: 'in' | 'out'
+  /** The handle's OWN clip. Reading the selection instead trimmed whichever
+   *  clip was selected when you tabbed to another clip's handle. */
+  clipId: string
   label: string
   onPointerDown: (e: PointerEvent) => void
 }) {
   const trim = useEditorStore((s) => s.trim)
   const timeline = useEditorStore((s) => s.timeline)
-  const selectedClipId = useEditorStore((s) => s.selectedClipId)
 
   return (
     <button
@@ -479,7 +485,7 @@ function Handle({
         // a mouse cannot be used with a trackpad at 4 px per second either.
         if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
         e.preventDefault()
-        const clip = timeline.clips.find((c) => c.id === selectedClipId)
+        const clip = timeline.clips.find((c) => c.id === clipId)
         if (!clip) return
         const step = (e.shiftKey ? 1 : 0.1) * (e.key === 'ArrowLeft' ? -1 : 1)
         const at = side === 'in' ? clip.startSec + step : clipSpan(clip).end + step

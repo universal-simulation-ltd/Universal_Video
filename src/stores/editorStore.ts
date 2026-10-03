@@ -338,7 +338,9 @@ export const useEditorStore = create<EditorState>((set, get) => {
     const plan = framed.clips.length
       ? planTimelineExport(framed, residentBytes(framed, assets), settings, mode, undefined, destination)
       : null
-    set({ timeline: framed, plan, ...overrides } as Partial<EditorState>)
+    // Any edit, frame or mode change answers a stale "can't be written out
+    // yet" notice: it described a timeline that no longer exists.
+    set({ timeline: framed, plan, blocked: null, ...overrides } as Partial<EditorState>)
   }
 
   return {
@@ -398,9 +400,10 @@ export const useEditorStore = create<EditorState>((set, get) => {
           continue
         }
 
+        const id = newSourceId()
+        let url: string | null = null
         try {
-          const id = newSourceId()
-          const url = URL.createObjectURL(file)
+          url = URL.createObjectURL(file)
           let source: TimelineSource
           let fps: number | undefined
 
@@ -424,7 +427,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
               probe: { durationSec: probe.duration, width: probe.width, height: probe.height },
             })
           } else {
-            const size = await imageSize(url)
+            const size = await imageSize(file, url)
             source = describeSource(id, 'image', file.name, DEFAULT_IMAGE_SEC, size.width, size.height, false)
             assets[id] = { file, url, probe: null }
           }
@@ -435,6 +438,12 @@ export const useEditorStore = create<EditorState>((set, get) => {
               ? insertIntro(timeline, id)
               : appendClip(timeline, id) // an outro IS an append; there is nothing after the end
         } catch (err) {
+          // The URL was handed out before the probe; a file that failed the
+          // probe never reaches `assets`, so nothing else would ever revoke it.
+          // Drop a half-registered asset too, rather than leave it pointing
+          // at a revoked URL.
+          if (url) URL.revokeObjectURL(url)
+          delete assets[id]
           problems.push(err instanceof Error ? err.message : `${file.name} couldn’t be read`)
         }
       }
@@ -463,7 +472,18 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
     seek: (sec) => set({ playheadSec: Math.max(0, sec) }),
 
-    setPlaying: (playing) => set({ playing }),
+    // Play from the very end starts again from the top, as every player does,
+    // rather than stopping on the first frame it draws.
+    setPlaying: (playing) => {
+      if (playing) {
+        const end = timelineDuration(get().timeline)
+        if (end > 0 && get().playheadSec >= end - 0.05) {
+          set({ playing, playheadSec: 0 })
+          return
+        }
+      }
+      set({ playing })
+    },
 
     // The clamp needs the duration and the measured width, because how far in a
     // movie can usefully be pushed depends on both — see `maxZoomFor()`.
@@ -787,6 +807,9 @@ export const useEditorStore = create<EditorState>((set, get) => {
         frame: DEFAULT_FRAME,
         plan: null,
         progress: null,
+        // A fresh edit starts as ONE file. Keeping "Separate files" across a
+        // reset turned the next 1 Click Compress into a one-piece .zip.
+        mode: 'one',
         result: null,
         pieces: null,
         savedTo: null,
@@ -839,7 +862,26 @@ export const selectPictureWidth = (s: EditorState) => {
   return pictureWidth(height > 0 ? width / height : 0)
 }
 
-function imageSize(url: string): Promise<{ width: number; height: number }> {
+/**
+ * Measured with `createImageBitmap` where there is one, because that is the
+ * decoder the export renderer uses: an `<img>` happily opens an SVG that
+ * `createImageBitmap` refuses, which let a card in at add time and failed the
+ * whole export minutes later.
+ */
+async function imageSize(file: File, url: string): Promise<{ width: number; height: number }> {
+  if (typeof createImageBitmap === 'function') {
+    let bitmap: ImageBitmap
+    try {
+      bitmap = await createImageBitmap(file)
+    } catch {
+      throw new Error(
+        `${file.name} can’t be used as a card: this browser can’t draw it into a video. A JPEG or PNG works everywhere.`,
+      )
+    }
+    const size = { width: bitmap.width, height: bitmap.height }
+    bitmap.close()
+    return size
+  }
   return new Promise((resolve, reject) => {
     const img = new Image()
     img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight })

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { formatBytes, formatDuration } from '@unisim/media'
 import { isOverrunning, projectedBytes } from '../lib/eta'
 import { useEditorStore } from '../stores/editorStore'
@@ -16,6 +17,14 @@ import { useEditorStore } from '../stores/editorStore'
 export default function Progress() {
   const progress = useEditorStore((s) => s.progress)
   const plan = useEditorStore((s) => s.plan)
+  // This card REPLACES the export panel whose button had the focus, which
+  // would otherwise drop to <body>. Take it, so a keyboard or screen-reader
+  // user lands on what is happening rather than at the top of the page.
+  const headingRef = useRef<HTMLParagraphElement>(null)
+  const shown = progress !== null
+  useEffect(() => {
+    if (shown) headingRef.current?.focus({ preventScroll: true })
+  }, [shown])
   if (!progress) return null
 
   const pct = Math.round(progress.fraction * 100)
@@ -32,7 +41,7 @@ export default function Progress() {
             encoder right now. Without it a five-piece export is a bar that
             crawls for four minutes with nothing to say it is working through a
             list. */}
-        <p className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">
+        <p ref={headingRef} tabIndex={-1} className="text-[13px] font-semibold text-slate-900 outline-none dark:text-slate-100">
           {batch ? `Writing piece ${progress.piece.index} of ${progress.piece.total}…` : 'Writing the file…'}
         </p>
         <p className="text-[12px] tabular-nums text-slate-500 dark:text-slate-400">
@@ -42,7 +51,14 @@ export default function Progress() {
         </p>
       </div>
 
-      <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+      <div
+        role="progressbar"
+        aria-label="Export progress"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct}
+        className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"
+      >
         <div
           className="h-full rounded-full bg-orange-600 transition-[width] duration-200"
           style={{ width: `${pct}%` }}

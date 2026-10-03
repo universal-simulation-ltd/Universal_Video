@@ -820,6 +820,50 @@ test.describe('Universal Video', () => {
     await expect(page.locator('[data-testid=clip]')).toHaveCount(1)
   })
 
+  test('the editor keys leave copy, and a focused button, alone', async ({ page }) => {
+    await page.goto('/')
+    await drop(page, 'clip.mp4', FIXTURE_BYTES)
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(1)
+    await page.getByLabel('Playhead').fill('1')
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+
+    // ⌘C / Ctrl+C is copy. It used to cut the clip in two on the way past.
+    await page.keyboard.press('Meta+c')
+    await page.keyboard.press('Control+c')
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(1)
+
+    // Space on a focused button presses THAT button — here, Cut — rather than
+    // being swallowed to start playback.
+    await page.getByRole('button', { name: /^Cut at / }).focus()
+    await page.keyboard.press(' ')
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(2)
+    await expect(page.getByRole('button', { name: 'Play' })).toBeVisible()
+
+    // A bare C, with nothing focused, still cuts. (The fixture is 2 s long.)
+    await page.getByLabel('Playhead').fill('1.5')
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+    await page.keyboard.press('c')
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(3)
+  })
+
+  test('an image the exporter could not draw is refused when it is added, not at export', async ({ page }) => {
+    await page.goto('/')
+    await drop(page, 'clip.mp4', FIXTURE_BYTES)
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(1)
+    // A PNG with a broken data chunk: <img> draws part of it, createImageBitmap
+    // (what the export renderer uses) refuses it.
+    await page.getByLabel('Add intro…').setInputFiles({
+      name: 'broken.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR4nGP8z8Dwn4GBgYEJRIAAIxUCBQGvUQoAAAAASUVORK5CYII=',
+        'base64',
+      ),
+    })
+    await expect(page.getByRole('alert')).toContainText('broken.png can’t be used as a card')
+    await expect(page.locator('[data-testid=clip]')).toHaveCount(1)
+  })
+
   test('a clip dragged a few pixels off its neighbour snaps flush instead of stacking', async ({ page }) => {
     // The magnet, in a real browser. Missing a butt-join by two pixels is not a
     // near miss in this editor: a same-track overlap is resolved by moving the
@@ -1503,8 +1547,13 @@ test.describe('Universal Video', () => {
   })
 })
 
-/** A 2×2 red PNG, so the intro-card path has a real image to decode. */
+/**
+ * A 2×2 orange PNG, so the intro-card path has a real image to decode.
+ * ⚠️ The previous bytes had a broken IDAT (bad CRC, invalid deflate): `<img>`
+ * draws what it can of that, but `createImageBitmap` — the export renderer's
+ * decoder, and since 2026-10-04 the add-time check — refuses it outright.
+ */
 const ONE_PIXEL_PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR4nGP8z8Dwn4GBgYEJRIAAIxUCBQGvUQoAAAAASUVORK5CYII=',
+  'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEUlEQVR4nGP438DwH4QZYAwAWsoJ+e+uaqEAAAAASUVORK5CYII=',
   'base64',
 )

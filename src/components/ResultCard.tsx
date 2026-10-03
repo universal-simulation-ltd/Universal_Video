@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { formatBytes } from '@unisim/media'
 import { selectRoute, useEditorStore } from '../stores/editorStore'
 
@@ -29,6 +30,13 @@ export default function ResultCard() {
   const downloadPiece = useEditorStore((s) => s.downloadPiece)
   const reset = useEditorStore((s) => s.reset)
   const route = useEditorStore(selectRoute)
+  // Replaces the progress card that had the focus; move it to the outcome so
+  // it is read out instead of being lost to <body>.
+  const titleRef = useRef<HTMLParagraphElement>(null)
+  const shown = Boolean(result || savedTo)
+  useEffect(() => {
+    if (shown) titleRef.current?.focus({ preventScroll: true })
+  }, [shown])
   // ⚠️ Two things to check, not one. A streamed batch finishes with no `result`
   // at all — the bytes went to the file as they were made — so an early return
   // on `!result` alone would show nothing at the end of a successful export.
@@ -68,7 +76,7 @@ export default function ResultCard() {
 
   return (
     <div className={`rounded-2xl border p-5 ${tone.card}`}>
-      <p className={`text-[15px] font-semibold ${tone.title}`}>
+      <p ref={titleRef} tabIndex={-1} className={`text-[15px] font-semibold outline-none ${tone.title}`}>
         {partial
           ? `Stopped after ${partial.written} of ${partial.total} — the ${partial.written} that finished are saved`
           : pieces

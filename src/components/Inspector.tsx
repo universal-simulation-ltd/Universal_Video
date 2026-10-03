@@ -103,6 +103,7 @@ export default function Inspector() {
               step={0.05}
               value={clip.audio.gain}
               aria-label="Volume of this clip"
+              aria-valuetext={`${Math.round(clip.audio.gain * 100)}%`}
               disabled={!clip.audio.enabled}
               onChange={(e) => audio(clip.id, { gain: Number(e.target.value) })}
               className="min-w-0 flex-1 accent-orange-600 disabled:opacity-40"
@@ -183,7 +184,10 @@ function TransitionField({
           value={round(durationSec)}
           aria-label={`${label} transition length in seconds`}
           disabled={kind === null}
-          onChange={(e) => onChange(kind, Number(e.target.value))}
+          // An emptied box is someone about to type, not a request for 0 s.
+          onChange={(e) => {
+            if (e.target.value.trim() !== '') onChange(kind, Number(e.target.value))
+          }}
           className="w-16 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[12px] tabular-nums text-slate-900 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
         />
       </div>
@@ -212,6 +216,9 @@ function NumberField({
         value={round(value)}
         aria-label={label}
         onChange={(e) => {
+          // `Number('')` is 0: clearing the box to retype it used to move the
+          // clip to the very start.
+          if (e.target.value.trim() === '') return
           const next = window.Number(e.target.value)
           if (window.Number.isFinite(next)) onChange(next)
         }}

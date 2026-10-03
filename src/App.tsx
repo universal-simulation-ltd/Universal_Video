@@ -134,17 +134,27 @@ export default function App() {
       // sound with no visible cause.
       if (route !== 'editor') return
       const el = e.target as HTMLElement | null
-      if (el && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) return
+      if (el && (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) || el.isContentEditable)) return
+      // ⌘C / Ctrl+C is "copy" and ⌘⌫ is "delete a word" — neither may cut or
+      // delete a clip on the way past.
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      // The toolbar's buttons are disabled mid-export; the keys must be too,
+      // or C and Delete edit a timeline the encoder is still reading.
+      if (status === 'exporting') return
       if (e.key === 'c' || e.key === 'C') cut()
       if (e.key === 'Delete' || e.key === 'Backspace') removeSelected()
       if (e.key === ' ') {
+        // Space on a focused button or link is how a keyboard user presses
+        // it. Only a timeline clip (and the page itself) hands Space to the
+        // player, as every editor does.
+        if (el && el.closest('button, a, summary, [role="menuitem"]') && !el.closest('[data-clip]')) return
         e.preventDefault()
         setPlaying(!playing)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [cut, removeSelected, setPlaying, playing, route])
+  }, [cut, removeSelected, setPlaying, playing, route, status])
 
   const editing = clips > 0
 
