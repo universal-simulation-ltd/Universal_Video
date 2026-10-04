@@ -1420,3 +1420,62 @@ Verified: nothing was driven in a browser for this app — the handler was delet
 and the app built. The geometry was proved in the SDK's own
 `npm run test:reveal-on-expand` (six browser cases plus a negative control) and
 measured in Universal Family at 390×844.
+
+## 21. Thumbnails and sound waves on the timeline's clips — 2026-10-04
+
+Every clip draws a filmstrip of its frames in the video lane and its sound
+wave in the audio lane. On by default; **Tune this app ▸ Hide timeline
+thumbnails** (unticked = shown, per the suite's unticked-by-default rule) puts
+the plain blocks back and closes every bitmap.
+
+**Where it lives.** `src/lib/strips/` — `layout.ts` (pure: slots, zoom
+buckets, peak columns), `strip.worker.ts` (WebCodecs), `service.ts` (cache,
+scheduler, the main-thread fallbacks), `yuv.ts` (frame → thumbnail pixels),
+`protocol.ts` (the messages). Drawn by `components/ClipStrips.tsx`; the Tune
+row is `components/StripsPreference.tsx` (localised in all eight languages);
+the setting is `stores/prefsStore.ts`.
+
+**Decisions worth keeping:**
+
+- **The strip is tiled against the SOURCE.** Slot `i` always covers source
+  seconds `[i·slot, (i+1)·slot)`; a clip only decides which are visible. A trim
+  slides the strip; it never re-picks frames under the user's finger.
+- **Frames are cached by file on a power-of-two grid of seconds** (the zoom
+  bucket). Grids nest, so zooming in reuses every frame already made. Zoomed
+  out, the nearest keyframe stands in for a slot (one decode, not a GOP) and is
+  recorded with its error; once zoomed in far enough for that error to matter,
+  it is shown as a placeholder until the exact frame replaces it.
+- **⚠️ Never `drawImage(VideoFrame)` in the worker.** In WebKit it stalls the
+  MAIN thread: measured 0.5–2.5 s worst frame gaps on a 60 s 1080p clip.
+  `VideoFrame.copyTo()` plus the CPU downsample in `yuv.ts` costs nothing on
+  the main thread in either engine. `drawImage` remains only for a pixel format
+  `yuv.ts` doesn't read (e.g. 10-bit).
+- **No frame is held across a `flush()`.** Frames that answer nothing are
+  closed in the output callback. Frames being copied are closed once their
+  pixels are out, which never waits on the decoder — the export renderer
+  learned what a frame held across a flush does to a hardware decoder.
+- **Only the near-screen window is drawn** (`drawWindow`, quantised to whole
+  screenfuls), so the needle scrolling the timeline during playback redraws
+  strips once per screen, not per frame.
+- **Memory:** a file no clip uses is dropped at once (bitmaps closed, jobs
+  cancelled, the worker terminated when nothing is left); a 48 MB LRU cap
+  covers the rest; the fallback `<video>`'s object URL is revoked however its
+  run ends. `window.__uvStripStats()` (dev builds only) is what the e2e leak
+  checks read.
+- **Audio-only clips:** the app refuses files without a video track at probe
+  time, so there is no audio-only clip to overlay a wave on. If that ever
+  changes, the waveform canvas is lane-agnostic.
+
+**Measured** (Playwright, 60 s 1920×1080 H.264 with B-frames + AAC, worst
+`requestAnimationFrame` gap): Chromium 18.7 ms after drop, 18.7–34.8 ms while
+zoomed ×11, 18.7 ms playing, the same as with strips hidden. WebKit
+27–51 ms, against 36–51 ms hidden. The `<video>` fallback: Chromium 18.8–33 ms;
+WebKit up to 129 ms while zoomed (seeks are main-thread there). Strips at fit
+settle in ~0.6 s in headless Chromium.
+
+**Tests:** `e2e/strips.e2e.ts` runs in Chromium AND WebKit (the only spec in
+the WebKit project). Its fixture, `colours-320x180.mp4`, is one solid colour
+per second with B-frames and a silent third second, so a wrong frame is a
+wrong colour and a missing silence is a visible wave. `__uvStrips = { video:
+'element', audio: 'fallback' }` before load forces both fallbacks.
+`PW_PORT` overrides the e2e server port.

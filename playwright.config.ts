@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
-const PORT = 5199
+// Overridable so a second checkout (or a parallel session) can run its own.
+const PORT = Number(process.env.PW_PORT) || 5199
 const BASE_URL = `http://localhost:${PORT}`
 
 // These specs drive the REAL app in a REAL Chromium and put a REAL MP4 through
@@ -33,6 +34,16 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
+      },
+    },
+    // Safari's engine, for the timeline strips only: they are the one feature
+    // here with a fallback path built FOR it (a seeked <video> where WebCodecs
+    // is missing). The editor's export specs stay Chromium-only — see above.
+    {
+      name: 'webkit',
+      testMatch: /strips\.e2e\.ts$/,
+      use: {
+        ...devices['Desktop Safari'],
       },
     },
   ],

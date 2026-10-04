@@ -21,9 +21,11 @@ import ExportPanel from './components/ExportPanel'
 import Progress from './components/Progress'
 import ResultCard from './components/ResultCard'
 import MoreInfo from './components/MoreInfo'
+import StripsPreference from './components/StripsPreference'
 import { NAVIGATED, currentRoute, type Route } from './lib/route'
 import { useEditorStore } from './stores/editorStore'
 import { useThemeStore } from './stores/themeStore'
+import { usePrefsStore } from './stores/prefsStore'
 import { KNOWLEDGE_BASE } from './knowledge'
 
 // The single page container. The navbar (via the SDK's `contentClassName`), the
@@ -118,6 +120,7 @@ export default function App() {
   const setPlaying = useEditorStore((s) => s.setPlaying)
   const playing = useEditorStore((s) => s.playing)
   const theme = useThemeStore((s) => s.effective)
+  const resetPrefs = usePrefsStore((s) => s.reset)
 
   // Probe H.264 encode support once, on arrival, so a Firefox visitor is told
   // before they pick a file rather than after waiting through one.
@@ -200,6 +203,10 @@ export default function App() {
         // Global preference (absent = follow global). Replaces the Appearance
         // rows AppMenu used to carry.
         themeStore={useThemeStore}
+        // Tune this app: the app's own rows (thumbnails and waveforms on the
+        // timeline), and its part of Reset to defaults.
+        appPreferences={<StripsPreference />}
+        onResetDefaults={resetPrefs}
         suiteSwitcherIconSrc={`${import.meta.env.BASE_URL}unisim-icon.png`}
       />
 

@@ -14,7 +14,12 @@ import { sourceById, trackCount } from '../lib/edit'
 import { snapStart, toleranceSecFor } from '../lib/snap'
 import { timecode } from '../lib/timecode'
 import { contentWidthFor } from '../lib/zoom'
+import { drawWindow } from '../lib/strips/layout'
+import { strips } from '../lib/strips/service'
 import { selectPxPerSec, useEditorStore } from '../stores/editorStore'
+import { usePrefsStore } from '../stores/prefsStore'
+import { useStripWindow } from '../stores/stripWindowStore'
+import { FilmStrip, Waveform } from './ClipStrips'
 
 /**
  * The timeline: a ruler, and every clip drawn as a video lane and an audio lane
@@ -65,6 +70,8 @@ export default function TimelineView() {
   const setPlaying = useEditorStore((s) => s.setPlaying)
   const surfaceRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<HTMLDivElement>(null)
+  const hideStrips = usePrefsStore((s) => s.hideStrips)
+  const setStripWindow = useStripWindow((s) => s.set)
 
   const duration = timelineDuration(timeline)
   // One empty track above the highest in use, so "drag it up to a new track" is
@@ -85,6 +92,45 @@ export default function TimelineView() {
     observer.observe(el)
     return () => observer.disconnect()
   }, [setViewport])
+
+  // The strips draw only near the screen. The window is quantised to whole
+  // screenfuls (see `drawWindow`), so the needle scrolling the box during
+  // playback re-draws them once per screen rather than once per frame.
+  useEffect(() => {
+    const el = viewRef.current
+    if (!el) return
+    const update = () => setStripWindow(drawWindow(el.scrollLeft, el.clientWidth))
+    update()
+    el.addEventListener('scroll', update, { passive: true })
+    return () => el.removeEventListener('scroll', update)
+  }, [setStripWindow, viewportPx])
+
+  // Thumbnails and peaks are cached by FILE: when no clip uses a file any more
+  // (its last clip deleted, or Start again), every frame of it is closed and
+  // its jobs cancelled. Subscribed rather than rendered from, so playback
+  // never re-renders this component. The fallback's hidden <video> stands down
+  // while the movie plays, for the same reason the preview's decoders matter more.
+  useEffect(() => {
+    const live = () => {
+      const { timeline, assets } = useEditorStore.getState()
+      return new Set(timeline.clips.map((c) => assets[c.sourceId]?.file).filter((f): f is File => !!f))
+    }
+    strips.prune(live())
+    strips.setPaused(useEditorStore.getState().playing)
+    const unsubscribe = useEditorStore.subscribe((state, prev) => {
+      if (state.timeline !== prev.timeline || state.assets !== prev.assets) strips.prune(live())
+      if (state.playing !== prev.playing) strips.setPaused(state.playing)
+    })
+    return () => {
+      unsubscribe()
+      strips.prune(live())
+    }
+  }, [])
+
+  // Turned off in Tune this app: give every bitmap and job back now, not later.
+  useEffect(() => {
+    if (hideStrips) strips.clear()
+  }, [hideStrips])
 
   // Zoom about the PLAYHEAD: keep the frame under the needle where it is on
   // screen. Anchoring on the left edge instead would throw you somewhere else
@@ -178,6 +224,7 @@ export default function TimelineView() {
                 pxPerSec={pxPerSec}
                 secondsAt={secondsAt}
                 surfaceRef={surfaceRef}
+                showStrips={!hideStrips}
               />
             ))}
           </div>
@@ -285,14 +332,17 @@ function ClipBlock({
   pxPerSec,
   secondsAt,
   surfaceRef,
+  showStrips,
 }: {
   clip: Clip
   rows: number
   pxPerSec: number
   secondsAt: (clientX: number) => number
   surfaceRef: RefObject<HTMLDivElement>
+  showStrips: boolean
 }) {
   const timeline = useEditorStore((s) => s.timeline)
+  const file = useEditorStore((s) => s.assets[clip.sourceId]?.file)
   const selected = useEditorStore((s) => s.selectedClipId === clip.id)
   const select = useEditorStore((s) => s.select)
   const drag = useEditorStore((s) => s.drag)
@@ -372,6 +422,8 @@ function ClipBlock({
   }
 
   const name = source?.name ?? 'clip'
+  const strip = showStrips && source && file
+  const wave = strip && source.hasAudio && clip.audio.enabled
 
   return (
     <>
@@ -429,25 +481,40 @@ function ClipBlock({
       >
         <span
           data-testid="video-lane"
-          className="flex h-[34px] items-center gap-1 bg-orange-100 px-2 text-[10.5px] font-semibold text-orange-950 dark:bg-orange-900/50 dark:text-orange-50"
+          className="relative flex h-[34px] items-center gap-1 overflow-hidden bg-orange-100 px-2 text-[10.5px] font-semibold text-orange-950 dark:bg-orange-900/50 dark:text-orange-50"
         >
-          {clip.transitionIn && <Chevron title={`${clip.transitionIn.kind} in`} />}
-          <span className="min-w-0 flex-1 truncate">{name}</span>
-          {clip.transitionOut && <Chevron title={`${clip.transitionOut.kind} out`} flipped />}
+          {strip && (
+            <FilmStrip clip={clip} source={source} file={file} leftPx={shownStart * pxPerSec} pxPerSec={pxPerSec} />
+          )}
+          {clip.transitionIn && <Chevron title={`${clip.transitionIn.kind} in`} strip={!!strip} />}
+          {/* Over the pictures, the name sits on its own tint so it reads
+              against any frame. */}
+          <span
+            className={`relative min-w-0 truncate ${
+              strip ? 'rounded bg-orange-50/85 px-1 leading-4 dark:bg-slate-950/70' : 'flex-1'
+            }`}
+          >
+            {name}
+          </span>
+          {strip && <span className="flex-1" />}
+          {clip.transitionOut && <Chevron title={`${clip.transitionOut.kind} out`} flipped strip={!!strip} />}
         </span>
         <span
           data-testid="audio-lane"
-          className={`flex h-[20px] items-center overflow-hidden whitespace-nowrap border-t border-orange-200/70 px-2 text-[9.5px] tabular-nums dark:border-orange-900 ${
+          className={`relative flex h-[20px] items-center overflow-hidden whitespace-nowrap border-t border-orange-200/70 px-2 text-[9.5px] tabular-nums dark:border-orange-900 ${
             clip.audio.enabled
               ? 'bg-sky-100 text-sky-900 dark:bg-sky-900/50 dark:text-sky-100'
               : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'
           }`}
         >
-          {clip.audio.enabled
-            ? `sound · ${timecode(span.start, 1)}–${timecode(span.end, 1)}`
-            : source?.hasAudio === false
-              ? 'no sound in this file'
-              : 'muted'}
+          {wave && <Waveform clip={clip} file={file} leftPx={shownStart * pxPerSec} pxPerSec={pxPerSec} />}
+          <span className="relative">
+            {clip.audio.enabled
+              ? `sound · ${timecode(span.start, 1)}–${timecode(span.end, 1)}`
+              : source?.hasAudio === false
+                ? 'no sound in this file'
+                : 'muted'}
+          </span>
         </span>
       </button>
 
@@ -498,12 +565,14 @@ function Handle({
   )
 }
 
-function Chevron({ title, flipped }: { title: string; flipped?: boolean }) {
+function Chevron({ title, flipped, strip }: { title: string; flipped?: boolean; strip?: boolean }) {
   return (
     <svg
       viewBox="0 0 8 8"
       aria-hidden="true"
-      className={`h-2.5 w-2.5 shrink-0 fill-current opacity-70 ${flipped ? 'rotate-180' : ''}`}
+      className={`relative h-2.5 w-2.5 shrink-0 fill-current ${strip ? 'text-white opacity-90 drop-shadow' : 'opacity-70'} ${
+        flipped ? 'rotate-180' : ''
+      }`}
     >
       <title>{title}</title>
       <path d="M0 8 L8 0 L8 8 Z" />
