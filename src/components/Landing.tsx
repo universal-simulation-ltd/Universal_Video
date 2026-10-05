@@ -136,9 +136,13 @@ export default function Landing() {
         <h1 className="text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl lg:text-5xl dark:text-slate-100">
           Videos that <span className="text-orange-600 dark:text-orange-400">just work</span>.
         </h1>
+        {/* "All on your device" is the PrivacyNote's claim in short — on a
+            laptop that note is under the card, below the fold, and "without
+            uploading it" is no longer on the front door (it is the title and
+            the editor's heading; see the ⚠️ above). */}
         <p className="mt-3 max-w-md text-slate-600 dark:text-slate-400">
           Trim it, cut it, stack it, intro or outro it, and choose the size and
-          shape it comes out at.
+          shape it comes out at — all on your device.
         </p>
 
         {/* One box, read top to bottom: open → recent → compress → more
