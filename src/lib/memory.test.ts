@@ -337,3 +337,43 @@ describe('streaming the archive to a file the user picked', () => {
     }
   })
 })
+
+/**
+ * The example clip (1280×720, 30 fps, 12 s, 564,353 bytes: ~296 kbps of picture
+ * and ~71 kbps of AAC) used to be predicted — and written — several times its
+ * own size at Balanced. Since @unisim/media 0.7.1 the encoder is held to the
+ * source's own rate, and the estimate has to say the same thing.
+ */
+describe('the estimate is held to the source, like the encoder', () => {
+  const example = (): Timeline => {
+    let tl = emptyTimeline()
+    tl = addSource(tl, describeSource('ex', 'video', 'Example_Video.mp4', 12, 1280, 720, true), 30)
+    return appendClip(tl, 'ex')
+  }
+  const rates = {
+    video: new Map([['ex', 295_753]]),
+    audio: new Map([['ex', 70_624]]),
+  }
+  const SOURCE = 564_353
+
+  it('predicts the example clip smaller than its source at every quality', () => {
+    for (const quality of ['small', 'balanced', 'high'] as const) {
+      const est = estimateTimelineOutput(example(), { ...DEFAULT_VIDEO_SETTINGS, quality }, 'one', rates)
+      expect(est.bytes, quality).toBeLessThan(SOURCE)
+    }
+  })
+
+  it('without the rates it is the old per-pixel figure — the one that said "bigger"', () => {
+    expect(estimateTimelineOutput(example(), DEFAULT_VIDEO_SETTINGS).bytes).toBeGreaterThan(SOURCE * 3)
+  })
+
+  it('holds the audio to the source too, on a rate the encoders accept', () => {
+    const est = estimateTimelineOutput(example(), DEFAULT_VIDEO_SETTINGS, 'one', rates)
+    expect(est.audioBitrate).toBe(64_000)
+  })
+
+  it('the plan carries the capped estimate through to the button', () => {
+    const plan = planTimelineExport(example(), SOURCE, DEFAULT_VIDEO_SETTINGS, 'one', budget(GiB), 'memory', rates)
+    expect(plan.estimate.bytes).toBeLessThan(SOURCE)
+  })
+})

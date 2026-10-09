@@ -3,10 +3,12 @@ import {
   DEFAULT_VIDEO_SETTINGS,
   VIDEO_INPUT_EXTS,
   probeVideoFile,
+  sourceBitrates,
   videoSupported,
   timelineDuration,
   type ClipId,
   type ConvertedFile,
+  type SourceBitrates,
   type SourceId,
   type Timeline,
   type TimelineSource,
@@ -44,7 +46,7 @@ import {
   type FrameSize,
 } from '../lib/frame'
 import { pictureWidth } from '../lib/layout'
-import { planTimelineExport, type TimelinePlan } from '../lib/memory'
+import { planTimelineExport, type SourceRates, type TimelinePlan } from '../lib/memory'
 import { FALLBACK_VIEWPORT_PX, FIT, clampZoom, maxZoomFor, pxPerSecFor } from '../lib/zoom'
 import {
   exportRoute,
@@ -87,7 +89,11 @@ export interface SourceAsset {
   /** Object URL for the `<video>`/`<img>` the player draws from. Revoked on reset. */
   url: string
   /** Videos only — the header read that fills in duration, fps and dimensions. */
-  probe: { width: number; height: number; duration: number; fps: number; hasAudio: boolean } | null
+  probe: {
+    width: number; height: number; duration: number; fps: number; hasAudio: boolean
+    /** What the file spent on picture and sound — the export's source cap. */
+    rates: SourceBitrates
+  } | null
 }
 
 export interface RunProgress extends VideoProgress {
@@ -263,6 +269,18 @@ function residentBytes(timeline: Timeline, assets: Record<SourceId, SourceAsset>
   return [...used].reduce((total, id) => total + (assets[id]?.file.size ?? 0), 0)
 }
 
+/** Each video source's own rates, for the estimate's "never bigger" cap. */
+function sourceRates(assets: Record<SourceId, SourceAsset>): SourceRates {
+  const video = new Map<SourceId, number | null>()
+  const audio = new Map<SourceId, number | null>()
+  for (const [id, asset] of Object.entries(assets)) {
+    if (!asset.probe) continue
+    video.set(id, asset.probe.rates.video)
+    audio.set(id, asset.probe.rates.audio)
+  }
+  return { video, audio }
+}
+
 /**
  * Hand a finished file to the browser.
  *
@@ -336,7 +354,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     // and a plan that ignored this would refuse it on both.
     const destination = mode === 'separate' && get().streamingZip ? 'stream' : 'memory'
     const plan = framed.clips.length
-      ? planTimelineExport(framed, residentBytes(framed, assets), settings, mode, undefined, destination)
+      ? planTimelineExport(framed, residentBytes(framed, assets), settings, mode, undefined, destination, sourceRates(assets))
       : null
     // Any edit, frame or mode change answers a stale "can't be written out
     // yet" notice: it described a timeline that no longer exists.
@@ -420,6 +438,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
                 duration: probe.duration,
                 fps: probe.fps,
                 hasAudio: probe.hasAudio,
+                rates: sourceBitrates(probe.tracks),
               },
             }
             remember.push({

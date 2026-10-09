@@ -33,11 +33,15 @@
 import {
   MAX_HEIGHTS,
   memoryBudget,
+  capAudioBitrateKbps,
   formatBytes,
   formatDuration,
+  timelineAudioCeiling,
   timelineDuration,
+  timelineVideoBitrate,
   videoBitrate,
   type MaxHeight,
+  type SourceId,
   type MemoryBudget,
   type OutputEstimate,
   type Timeline,
@@ -108,10 +112,23 @@ export interface TimelinePlan {
  * reframe: telling the user a 480×270 phone clip fits and then encoding it into
  * a 1920×1080 frame is eight times the pixels and a refusal made too late.
  */
+/**
+ * What each source spent on picture and sound, by source id, read from its
+ * sample table at import (`sourceBitrates()` in `@unisim/media`). Passed so the
+ * estimate applies the same "never bigger than the source" cap the encoder
+ * does (media 0.7.1) — without it the button predicted the example clip coming
+ * out several times its own size, and the encoder now writes it smaller.
+ */
+export interface SourceRates {
+  video: Map<SourceId, number | null>
+  audio: Map<SourceId, number | null>
+}
+
 export function estimateTimelineOutput(
   timeline: Timeline,
   settings: VideoSettings,
   mode: ExportMode = 'one',
+  rates?: SourceRates,
 ): OutputEstimate {
   // ⚠️ THE TWO MODES MEASURE DIFFERENT LENGTHS, AND THE DIFFERENCE IS REAL.
   // A joined movie is `timelineDuration()` — the furthest any clip reaches,
@@ -127,9 +144,18 @@ export function estimateTimelineOutput(
     : timelineDuration(timeline)
   const size = outputFrame(timeline, settings)
   const fps = timeline.fps > 0 ? timeline.fps : 30
-  const video = videoBitrate(size.width, size.height, fps, settings.quality)
+  // Held to the densest source when the rates are known — the encoder's own
+  // rule (`timelineVideoBitrate` is what renderTimeline uses; a one-clip
+  // export through convertVideo comes to the same number, its frame being the
+  // source's). Unknown rates leave the per-pixel target, as before.
+  const video = rates
+    ? timelineVideoBitrate({ ...timeline, width: size.width, height: size.height, fps }, settings.quality, rates.video)
+    : videoBitrate(size.width, size.height, fps, settings.quality)
   const anyAudible = timeline.clips.some((c) => c.audio.enabled)
-  const audio = settings.keepAudio && anyAudible ? settings.audioBitrateKbps * 1000 : 0
+  const audioKbps = rates
+    ? capAudioBitrateKbps(settings.audioBitrateKbps, timelineAudioCeiling(timeline, rates.audio))
+    : settings.audioBitrateKbps
+  const audio = settings.keepAudio && anyAudible ? audioKbps * 1000 : 0
   // Same overhead model as the package: ~8 bytes of sample table per frame plus
   // a few kilobytes of fixed boxes — once PER FILE, because five MP4s carry five
   // sets of those boxes. A few kilobytes each, so this changes no verdict; it is
@@ -225,8 +251,10 @@ export function planTimelineExport(
    * `'stream'` — see `lib/zipTarget.ts` for who decides.
    */
   destination: ZipDestination = 'memory',
+  /** Per-source rates for the source cap — see `SourceRates`. */
+  rates?: SourceRates,
 ): TimelinePlan {
-  const estimate = estimateTimelineOutput(timeline, settings, mode)
+  const estimate = estimateTimelineOutput(timeline, settings, mode, rates)
   const pieces = mode === 'separate' ? segmentsOf(timeline) : []
   const fileCount = mode === 'separate' ? Math.max(1, pieces.length) : 1
   // ⚠️ Streaming only changes the sum for a batch of MORE THAN ONE piece. One
@@ -267,7 +295,7 @@ export function planTimelineExport(
     return { ...base, verdict, headline, detail: '', alternative: null }
   }
 
-  const alternative = findAlternative(timeline, sourceBytes, settings, mode, budget, destination)
+  const alternative = findAlternative(timeline, sourceBytes, settings, mode, budget, destination, rates)
 
   if (verdict === 'tight') {
     return {
@@ -324,13 +352,14 @@ function findAlternative(
   mode: ExportMode,
   budget: MemoryBudget,
   destination: ZipDestination,
+  rates?: SourceRates,
 ): TimelinePlanAlternative | null {
   const currentIndex = MAX_HEIGHTS.indexOf(settings.maxHeight)
   const heights = MAX_HEIGHTS.slice(currentIndex < 0 ? 0 : currentIndex + 1)
   for (const maxHeight of heights) {
     for (const quality of qualitiesFrom(settings.quality)) {
       const candidate: VideoSettings = { ...settings, maxHeight, quality }
-      const estimate = estimateTimelineOutput(timeline, candidate, mode)
+      const estimate = estimateTimelineOutput(timeline, candidate, mode, rates)
       // ⚠️ The candidate has to be measured the way the real export will be
       // measured. Sizing a smaller setting against the in-tab sum while the
       // export streams would offer 480p to someone whose 1080p already fits.
