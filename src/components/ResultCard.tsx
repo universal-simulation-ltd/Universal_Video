@@ -50,6 +50,11 @@ export default function ResultCard() {
   const comparable = !pieces && route === 'compress' && sourceBytes > 0
   const saving = comparable ? 1 - size / sourceBytes : 0
   const predicted = plan?.estimate.bytes ?? 0
+  // @unisim/media 0.7.2: the re-encode came out BIGGER than the original (a
+  // software H.264 encoder can floor above a tiny source's rate), so the
+  // original came back untouched. Said plainly — "about the same size" would
+  // hide that nothing was re-encoded at all.
+  const keptOriginal = Boolean(result?.keptOriginal) && comparable
   // Whether a piece can be saved on its own. False for a streamed batch, where
   // the blob is gone by design — see `BatchPiece.file`.
   const piecesInTab = pieces?.some((piece) => piece.file !== null) ?? false
@@ -83,7 +88,9 @@ export default function ResultCard() {
             ? `Done — ${pieces.length} separate videos`
             : !comparable
               ? 'Done — your edit is written'
-              : saving > 0.02
+              : keptOriginal
+                ? 'Done — your original is already as small as it gets'
+                : saving > 0.02
                 ? `Done — ${Math.round(saving * 100)}% smaller`
                 : saving < -0.02
                   ? `Done — but ${Math.round(-saving * 100)}% bigger than the original`
@@ -93,8 +100,14 @@ export default function ResultCard() {
         {comparable ? `${formatBytes(sourceBytes)} → ` : ''}
         {formatBytes(size)}
         {pieces && ' zipped'}
-        {predicted > 0 && !partial && ` (predicted ${formatBytes(predicted)})`}
+        {predicted > 0 && !partial && !keptOriginal && ` (predicted ${formatBytes(predicted)})`}
       </p>
+      {keptOriginal && (
+        <p className={`mt-1.5 text-[12px] leading-relaxed ${tone.body}`}>
+          This browser’s encoder couldn’t make it any smaller — a re-encode came out bigger — so
+          you’re getting your original back, untouched.
+        </p>
+      )}
 
       {/* Why it stopped, and what is not in the archive. A partial result that
           does not name the gap is worse than no result: the zip opens, four

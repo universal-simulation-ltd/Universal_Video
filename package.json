@@ -17,7 +17,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@unisim/media": "^0.7.1",
+    "@unisim/media": "^0.7.2",
     "@unisim/sdk": "^0.180.11",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
