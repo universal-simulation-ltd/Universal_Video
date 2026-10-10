@@ -1,7 +1,7 @@
 {
   "app": "universal-video",
   "appVersion": "0.1.0",
-  "generated": "2026-10-09",
+  "generated": "2026-10-10",
   "noticesCount": 10,
   "ships": [
     {
@@ -51,7 +51,9 @@
       "licence": "MIT",
       "repo": "https://github.com/eslint/eslint",
       "homepage": "https://eslint.org",
-      "authors": [],
+      "authors": [
+        "OpenJS Foundation"
+      ],
       "source": "node_modules"
     },
     {
@@ -93,13 +95,16 @@
       "licence": "MIT",
       "repo": "https://github.com/facebook/react",
       "homepage": "https://react.dev/",
-      "authors": [],
+      "authors": [
+        "Meta Platforms, Inc."
+      ],
       "source": "node_modules"
     },
     {
       "name": "eslint-plugin-react-refresh",
       "version": "0.4.26",
       "licence": "MIT",
+      "repo": "https://github.com/ArnaudBarre/eslint-plugin-react-refresh",
       "authors": [
         "Arnaud Barré"
       ],
