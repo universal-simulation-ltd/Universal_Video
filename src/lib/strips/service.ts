@@ -1,5 +1,6 @@
 import type { FromWorker, ToWorker } from './protocol'
 import { accumulatePeaks, peakBinsFor, timeKey, type Peaks } from './layout'
+import { containBox } from './rotation'
 
 /**
  * The timeline strips' cache and scheduler — the main-thread half.
@@ -784,6 +785,34 @@ export class StripService {
 }
 
 /**
+ * Draw `src` into the thumbnail keeping its shape, centred on black — the
+ * player's *contain*. A `<video>` reports and draws its picture already turned
+ * the way its header says (a phone video shot upright is portrait here even
+ * though its track says landscape), so stretching it to the box would squash
+ * it (2026-10-11).
+ */
+function drawContained(
+  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  src: CanvasImageSource,
+  width: number,
+  height: number,
+): void {
+  const v = src as HTMLVideoElement
+  const b = src as { width?: unknown; height?: unknown }
+  const srcW = typeof v.videoWidth === 'number' ? v.videoWidth : typeof b.width === 'number' ? b.width : 0
+  const srcH = typeof v.videoHeight === 'number' ? v.videoHeight : typeof b.height === 'number' ? b.height : 0
+  const box = containBox(srcW, srcH, width, height)
+  // Within a pixel of the box is the same shape, rounded: fill it, as before.
+  if (Math.abs(box.width - width) <= 1 && Math.abs(box.height - height) <= 1) {
+    ctx.drawImage(src, 0, 0, width, height)
+    return
+  }
+  ctx.fillStyle = '#000'
+  ctx.fillRect(0, 0, width, height)
+  ctx.drawImage(src, box.x, box.y, box.width, box.height)
+}
+
+/**
  * A thumbnail-sized surface to draw a frame into and lift an `ImageBitmap`
  * off. `OffscreenCanvas` where there is one; a detached `<canvas>` otherwise.
  */
@@ -794,7 +823,7 @@ function makeDrawSurface(width: number, height: number): (src: CanvasImageSource
     if (ctx) {
       return async (src) => {
         try {
-          ctx.drawImage(src, 0, 0, width, height)
+          drawContained(ctx, src, width, height)
           return canvas.transferToImageBitmap()
         } catch {
           return null
@@ -809,7 +838,7 @@ function makeDrawSurface(width: number, height: number): (src: CanvasImageSource
   return async (src) => {
     if (!ctx) return null
     try {
-      ctx.drawImage(src, 0, 0, width, height)
+      drawContained(ctx, src, width, height)
       return await createImageBitmap(canvas)
     } catch {
       return null

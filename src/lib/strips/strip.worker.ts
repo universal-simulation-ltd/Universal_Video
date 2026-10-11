@@ -2,6 +2,7 @@
 import { probeVideoFile, type Sample, type Track } from '@unisim/media'
 import { accumulatePeaks, peakBinsFor } from './layout'
 import type { FromWorker, ToWorker } from './protocol'
+import { containBox, placeRotated, readRotation, type Rotation } from './rotation'
 import { SUPPORTED_FORMATS, thumbnailRgba, type RawFormat } from './yuv'
 
 /**
@@ -39,6 +40,17 @@ async function tracksOf(file: File): Promise<Track[]> {
   // a sample table for an hour of video is megabytes.
   if (tracksCache.size > 6) tracksCache.delete(tracksCache.keys().next().value as File)
   return probe.tracks
+}
+
+/** Each file's display rotation (see `rotation.ts`), so a second job does not re-read its header. */
+const rotationCache = new Map<File, Rotation>()
+async function rotationOf(file: File, trackId: number): Promise<Rotation> {
+  const hit = rotationCache.get(file)
+  if (hit !== undefined) return hit
+  const rotation = await readRotation(file, trackId).catch((): Rotation => 0)
+  rotationCache.set(file, rotation)
+  if (rotationCache.size > 6) rotationCache.delete(rotationCache.keys().next().value as File)
+  return rotation
 }
 
 let videoQueue: Promise<void> = Promise.resolve()
@@ -153,6 +165,22 @@ async function runFrames(job: Extract<ToWorker, { type: 'frames' }>): Promise<vo
     fallback('no 2d context')
     return
   }
+  // A phone video shot upright is coded on its side with a quarter turn in its
+  // header; the decoder hands the picture over as coded. Turned here, and
+  // fitted inside the thumbnail the way the player fits it (2026-10-11).
+  const rotation = await rotationOf(file, track.id)
+  if (cancelled.has(jobId)) return
+  const quarter = rotation === 90 || rotation === 270
+  // Where the upright picture sits in the thumbnail, and the size it has to be
+  // made at BEFORE turning (width and height swapped for a quarter turn).
+  const placed = rotation
+    ? containBox(quarter ? track.height : track.width, quarter ? track.width : track.height, width, height)
+    : { x: 0, y: 0, width, height }
+  const codedW = quarter ? placed.height : placed.width
+  const codedH = quarter ? placed.width : placed.height
+  // Only for a pixel format the arithmetic does not read (see `shrink`).
+  const codedCanvas = rotation ? new OffscreenCanvas(codedW, codedH) : null
+  const codedCtx = codedCanvas?.getContext('2d', { alpha: false }) ?? null
   // The last thumbnail made, for any time past the final frame (a grid point
   // in the last fraction of a second).
   let lastImage: ImageData | null = null
@@ -164,6 +192,19 @@ async function runFrames(job: Extract<ToWorker, { type: 'frames' }>): Promise<vo
    * arithmetic does not read.
    */
   const thumbnail = async (frame: VideoFrame): Promise<ImageData | null> => {
+    if (!rotation || !codedCtx) return shrink(frame, width, height, ctx)
+    const coded = await shrink(frame, codedW, codedH, codedCtx)
+    if (!coded) return null
+    return new ImageData(placeRotated(coded.data, codedW, codedH, rotation, width, height, placed), width, height)
+  }
+
+  /** The frame as coded, shrunk to `w × h` — `surface` is a canvas of that size, for the formats the arithmetic does not read. */
+  const shrink = async (
+    frame: VideoFrame,
+    w: number,
+    h: number,
+    surface: OffscreenCanvasRenderingContext2D,
+  ): Promise<ImageData | null> => {
     const format = frame.format
     if (format && SUPPORTED_FORMATS.includes(format)) {
       const size = frame.allocationSize()
@@ -180,13 +221,13 @@ async function runFrames(job: Extract<ToWorker, { type: 'frames' }>): Promise<vo
           matrix: frame.colorSpace?.matrix,
           fullRange: frame.colorSpace?.fullRange,
         },
-        width,
-        height,
+        w,
+        h,
       )
-      if (rgba) return new ImageData(rgba, width, height)
+      if (rgba) return new ImageData(rgba, w, h)
     }
-    ctx.drawImage(frame, 0, 0, width, height)
-    return ctx.getImageData(0, 0, width, height)
+    surface.drawImage(frame, 0, 0, w, h)
+    return surface.getImageData(0, 0, w, h)
   }
 
   const emit = (image: ImageData, timeSec: number, errorSec: number) => {

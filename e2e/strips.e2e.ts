@@ -15,6 +15,12 @@ import { dirname, join } from 'node:path'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const COLOURS = readFileSync(join(HERE, 'fixtures', 'colours-320x180.mp4'))
+// 320×180 coded, red over blue, with a display matrix turning it 90° clockwise
+// — how a phone held upright records. Upright it is 180×320, blue on the LEFT,
+// red on the RIGHT. 3.5 KB, made with ffmpeg 8 from a red-over-blue clip:
+//   ffmpeg -display_rotation:v:0 -90 -i plain.mp4 -c copy -movflags +faststart rotated-90-320x180.mp4
+// (ffmpeg counts anticlockwise; ffprobe reports rotation=-90.)
+const ROTATED = readFileSync(join(HERE, 'fixtures', 'rotated-90-320x180.mp4'))
 
 type Rgb = [number, number, number]
 
@@ -179,6 +185,37 @@ test.describe('timeline thumbnails and waveforms', () => {
     // The fallback's object URL is revoked when its run ends.
     await expect.poll(async () => (await stats(page)).urlsOpen).toBe(0)
   })
+
+  for (const path of ['decoder', 'element'] as const) {
+    test(`a phone video shot upright is upright in its thumbnails (${path})`, async ({ page }, info) => {
+      if (path === 'element') {
+        await page.addInitScript(() => {
+          ;(window as unknown as { __uvStrips: unknown }).__uvStrips = { video: 'element' }
+        })
+      }
+      await page.goto('/')
+      await drop(page, 'rotated.mp4', ROTATED)
+      await stripsSettled(page)
+      const used = await page.locator('[data-testid=filmstrip]').getAttribute('data-path')
+      if (path === 'element' || info.project.name === 'chromium') expect(used).toBe(path)
+      // The first thumbnail, at CSS x across its 60 × 34 slot, halfway down.
+      // Upright and fitted it is a 19 px portrait picture in the middle of the
+      // slot (x 20–39): blue then red, black either side. On its side it
+      // would fill the slot, red over blue.
+      const at = (x: number) =>
+        page.evaluate((x) => {
+          const canvas = document.querySelector('[data-testid=filmstrip]') as HTMLCanvasElement
+          const rect = canvas.getBoundingClientRect()
+          const k = canvas.width / rect.width
+          const d = canvas.getContext('2d')!.getImageData(Math.round(x * k), Math.round(canvas.height / 2), 1, 1).data
+          return [d[0], d[1], d[2]] as [number, number, number]
+        }, x)
+      expect(named(await at(24))).toBe('blue')
+      expect(named(await at(35))).toBe('red')
+      const bar = await at(6)
+      expect(Math.max(...bar), `the bar beside the picture is black, got ${bar}`).toBeLessThan(40)
+    })
+  }
 
   test('removing a clip, or starting again, closes every thumbnail', async ({ page }) => {
     await page.goto('/')
