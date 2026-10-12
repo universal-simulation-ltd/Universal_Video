@@ -5,10 +5,11 @@ import { DropRing, UniversalAppsNavBar, UpdateNotice, type AboutAppConfig } from
 // lockfile the first time anyone upgrades anything, and a credits list naming a
 // package we removed is worse than no list at all.
 import credits from './generated/credits.json'
-// <UsageTracker /> sends one "session.opened" row for a signed-in visitor. No
-// event may carry a filename, a duration, a resolution or a byte count: this
-// app's whole claim is that we never see the file.
-import { UsageTracker } from '@unisim/sdk'
+// No <UsageTracker />: signing in unlocks nothing in this app (there is no
+// account feature, nothing saved online), so there is nothing an account's
+// activity page needs to hear about. If one is ever added, no event may carry a
+// filename, a duration, a resolution or a byte count: this app's whole claim is
+// that we never see the file.
 import AppMenu from './components/Header/AppMenu'
 import ProductLogo from './components/Header/ProductLogo'
 import Landing from './components/Landing'
@@ -225,8 +226,6 @@ export default function App() {
       <div className={`${CONTAINER} pt-4 empty:hidden`}>
         <UpdateNotice />
       </div>
-
-      <UsageTracker />
 
       {/* The front door is CENTRED in what is left of the window, the way
           Universal PDF's is: it is one card and a drawing, and pinned to the

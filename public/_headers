@@ -1,5 +1,32 @@
 # Force HTTPS: instruct browsers to only ever connect over TLS (mirrors the
 # marketing site). The HTTP→HTTPS redirect itself is the Cloudflare zone
 # "Always Use HTTPS" setting.
+#
+# Content-Security-Policy (2026-10-12) — ENFORCED. What the app really reaches
+# for, and nothing else:
+#   • script-src: its own bundle and Google's sign-in script (the SDK loads
+#     accounts.google.com/gsi/client on demand). No inline script, no
+#     'unsafe-inline', no 'unsafe-eval', no WebAssembly (there is no ffmpeg).
+#   • style-src 'unsafe-inline': React style attributes, everywhere.
+#   • connect-src: the example video (same origin), Supabase (API, auth,
+#     realtime), the suite changelog, Google sign-in.
+#   • media-src / img-src blob:: every video and still the editor shows is an
+#     object URL made from your own file on this device.
+#   • worker-src 'self' blob:: the service worker and the timeline-strip worker.
+#   • img-src https:: avatars and organisation logos (Supabase Storage, the
+#     sign-in provider).
+#   • No Cloudflare Web Analytics. Cloudflare's zone-level automatic setup
+#     injects its beacon (static.cloudflareinsights.com) into the live HTML;
+#     this policy refuses it. Turn the injection off for this host in
+#     Cloudflare (Web Analytics site rules).
+# The dev server (and so the e2e suite) serves the same policy Report-Only
+# (vite.config.ts, cspDev()).
+#
+# Hardening. Nothing in the suite frames this app, so refusing to be framed
+# elsewhere costs nothing and closes off click-jacking.
 /*
   Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: SAMEORIGIN
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' data: blob: https://rygfxgalojojppxmhddo.supabase.co wss://rygfxgalojojppxmhddo.supabase.co https://changelog.unisim.co.uk https://accounts.google.com/gsi/; media-src 'self' blob: data:; worker-src 'self' blob:; frame-src 'self' https://accounts.google.com/gsi/; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'

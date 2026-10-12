@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import pkg from './package.json' with { type: 'json' }
+import { cspDev } from './scripts/cspDev.mjs'
 
 // Universal Video is served at opensource.unisim.co.uk/video in production.
 // `base` + PWA scope derive from Vite's `mode`; local dev stays `/`.
@@ -37,6 +38,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       tailwindcss(),
+      cspDev(),
       VitePWA({
         registerType: 'autoUpdate',
         includeAssets: ['favicon.svg', 'unisim-icon.png', 'icon-180.png', 'icon-192.png', 'icon-512.png'],

@@ -51,11 +51,10 @@ privacy page that pretended otherwise would look like a lie.
 - **The example video**, if you click "try an example" — that is a download
   from us to you, not the other way around.
   See [`src/components/Landing.tsx`](src/components/Landing.tsx).
-- **Signing in.** Only if you choose to. Nothing in this app requires it.
-- **"You opened the app".** When you are signed in, the app records one event
-  saying the app was opened, so your account's activity page is accurate. It
-  does not include anything about your video — not its name, not its length,
-  not its size. See [`src/UsageTracker.tsx`](src/UsageTracker.tsx).
+- **Signing in.** Only if you choose to. Nothing in this app requires it, and
+  nothing in it changes when you do: signing in gives you the suite's shared
+  account and settings, not a place to put your video. The app does not
+  record that you opened it, signed in or not.
 - **"This app is in use".** While the app is open and on screen, it tells our
   server every 45 seconds that this app is in use on this device, so the menu
   can say how many people use it and how many are using it now. That message
@@ -65,9 +64,11 @@ privacy page that pretended otherwise would look like a lie.
 - **The changelog and update notice.**
 
 **There is no third-party analytics, no tracking pixel, and no advertising
-script.** You can check that without reading any code: view the page source of
-[the live app](https://opensource.unisim.co.uk/video/) and look at what it
-loads. Everything comes from our own domain.
+script.** The site's Content-Security-Policy ([`public/_headers`](public/_headers))
+only lets the page run its own code and Google's sign-in script, so anything
+else injected into the page is refused. You can check that without reading any
+code: open [the live app](https://opensource.unisim.co.uk/video/) with your
+browser's developer tools on the **Network** tab and look at what it loads.
 
 ---
 
@@ -86,5 +87,6 @@ then use the app. Your video is never in the list.
 ## If you find this page is wrong
 
 That is worth more to us than it costs. Open an issue on
-[the repository](https://github.com/universal-simulation-ltd/Universal_Video/issues).
+[the repository](https://github.com/universal-simulation-ltd/Universal_Video/issues),
+or email inbox@unisim.co.uk.
 A claim nobody can correct isn't a guarantee either.
