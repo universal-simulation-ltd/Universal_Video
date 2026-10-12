@@ -39,6 +39,8 @@ import {
 import { evenEdge, outputFrame } from './frame'
 import { segmentsOf, separateBlocked } from './segments'
 import { createZip } from '@unisim/media'
+import { readRotation } from './strips/rotation'
+import { withVideoRotation } from './turnExport'
 
 /**
  * Everything the renderer needs that the `Timeline` itself does not carry.
@@ -161,7 +163,7 @@ async function compressSingleClip(
   const file = files[clip.sourceId]
   if (!source || !file) throw new Error('That clip’s file is no longer open in this tab.')
 
-  return convertVideo(
+  const converted = await convertVideo(
     file,
     {
       ...settings,
@@ -176,6 +178,12 @@ async function compressSingleClip(
     undefined,
     onDetail,
   )
+  // A re-encode writes the frames as the decoder gave them — as CODED — so a
+  // phone clip shot upright needs its turn put back (see `turnExport.ts`). The
+  // original handed back unchanged already has it.
+  if (converted.keptOriginal) return converted
+  const rotation = await readRotation(file)
+  return rotation === 0 ? converted : { ...converted, blob: await withVideoRotation(converted.blob, rotation) }
 }
 
 export function trimForClip(clip: Clip, sourceDurationSec: number): VideoSettings['trim'] {

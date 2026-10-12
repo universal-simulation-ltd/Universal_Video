@@ -27,6 +27,26 @@ const FIXTURE_BYTES = readFileSync(FIXTURE)
 const PORTRAIT = join(HERE, 'fixtures', 'portrait-270x480.mp4')
 const PORTRAIT_BYTES = readFileSync(PORTRAIT)
 
+// `fixtures/rotated-90-noisy-320x180.mp4` is how a phone held upright records:
+// 320×180 CODED, red over blue, plus a display matrix (tkhd) turning it 90°
+// clockwise — so upright it is 180×320, blue on the LEFT, red on the RIGHT.
+// Noisy and ~880 kbps on purpose, so a re-encode is smaller than the source and
+// the export cannot fall back to handing the original back (which would keep
+// the matrix and prove nothing). 2 s, AAC tone. Made with ffmpeg 8:
+//   ffmpeg -f lavfi -i "color=c=red:s=320x90:r=30:d=2[r];color=c=blue:s=320x90:r=30:d=2[b];[r][b]vstack,noise=alls=12:allf=t" \
+//     -f lavfi -i "sine=frequency=440:duration=2" -c:v libx264 -pix_fmt yuv420p -crf 24 -g 30 -c:a aac -b:a 96k -shortest plain.mp4
+//   ffmpeg -display_rotation:v:0 -90 -i plain.mp4 -c copy -movflags +faststart rotated-90-noisy-320x180.mp4
+// (ffmpeg counts anticlockwise; ffprobe reports rotation=-90.)
+const ROTATED_BYTES = readFileSync(join(HERE, 'fixtures', 'rotated-90-noisy-320x180.mp4'))
+// The timeline renderer turns rotated frames from @unisim/media 0.8.0.
+const MEDIA_VERSION: string = JSON.parse(
+  readFileSync(join(HERE, '..', 'node_modules', '@unisim', 'media', 'package.json'), 'utf8'),
+).version
+const MEDIA_TURNS_FRAMES = (() => {
+  const [major, minor] = MEDIA_VERSION.split('.').map(Number)
+  return major > 0 || minor >= 8
+})()
+
 /**
  * Open the actions dropdown and click one of its rows.
  *
@@ -1336,6 +1356,66 @@ test.describe('Universal Video', () => {
     // …and the picture really is in the middle, not merely absent everywhere.
     expect(middle.r).toBeGreaterThan(120)
     expect(middle.r).toBeGreaterThan(middle.g + 40)
+  })
+
+  test('a phone video shot upright exports upright', async ({ page }) => {
+    // The player honours the clip's display matrix; WebCodecs frames do not, so
+    // an export that decodes and re-encodes writes the CODED picture — on its
+    // side — unless the turn is carried into the file.
+    await page.goto('/')
+    await drop(page, 'rotated.mp4', ROTATED_BYTES)
+    // The movie is the shape the phone showed, not the shape it coded.
+    await expect(page.getByText(/180×320 · 0:02/).first()).toBeVisible()
+    await expect(page.locator('[data-testid=preview]')).toHaveAttribute('data-frame', '180x320')
+
+    await page.getByRole('button', { name: /Export this video/ }).click()
+    await expect(page.getByRole('button', { name: /^Save / })).toBeVisible({ timeout: 60_000 })
+
+    // Upright: blue down the left half, red down the right. On its side it
+    // would be 320×180, red over blue.
+    const result = await readBackPixels(page, 1, [
+      [45, 160],
+      [135, 160],
+    ])
+    expect(result.width).toBe(180)
+    expect(result.height).toBe(320)
+    const [left, right] = result.samples
+    expect(left.b, `left should be blue, got ${JSON.stringify(left)}`).toBeGreaterThan(left.r + 60)
+    expect(right.r, `right should be red, got ${JSON.stringify(right)}`).toBeGreaterThan(right.b + 60)
+    // A re-encode, not the original handed back with its matrix intact.
+    expect(result.size).toBeLessThan(ROTATED_BYTES.length)
+  })
+
+  test('a phone video shot upright, reframed to landscape, is upright in the frame', async ({ page }) => {
+    // The other export route: a reframe goes through the timeline renderer,
+    // which composites decoded frames onto a canvas of its own — so the turn
+    // has to be applied INSIDE @unisim/media, and only 0.8.0 does. Skipped
+    // until the app is on it; it starts running by itself after the bump.
+    test.skip(!MEDIA_TURNS_FRAMES, `@unisim/media ${MEDIA_VERSION} draws a phone clip on its side; 0.8.0 turns it`)
+    await page.goto('/')
+    await drop(page, 'rotated.mp4', ROTATED_BYTES)
+    await expect(page.getByText(/180×320 · 0:02/).first()).toBeVisible()
+    await page.getByLabel('Output frame').selectOption('landscape')
+    await expect(page.locator('[data-testid=preview]')).toHaveAttribute('data-frame', '1920x1080')
+    await page.getByRole('button', { name: /Export this video|Export this edit/ }).click()
+    await expect(page.getByRole('button', { name: /^Save / })).toBeVisible({ timeout: 180_000 })
+
+    // 180×320 contained in 1920×1080 is 607.5 px wide, x≈656–1264: blue on
+    // its left half, red on its right, black bars either side.
+    const result = await readBackPixels(page, 1, [
+      [64, 540],
+      [800, 540],
+      [1120, 540],
+      [1856, 540],
+    ])
+    expect(result.width).toBe(1920)
+    expect(result.height).toBe(1080)
+    const [farLeft, left, right, farRight] = result.samples
+    const lit = (s: { r: number; g: number; b: number }) => Math.max(s.r, s.g, s.b)
+    expect(lit(farLeft)).toBeLessThan(24)
+    expect(lit(farRight)).toBeLessThan(24)
+    expect(left.b, `left of the picture should be blue, got ${JSON.stringify(left)}`).toBeGreaterThan(left.r + 60)
+    expect(right.r, `right of the picture should be red, got ${JSON.stringify(right)}`).toBeGreaterThan(right.b + 60)
   })
 
   test('a custom frame cannot be given an odd edge', async ({ page }) => {

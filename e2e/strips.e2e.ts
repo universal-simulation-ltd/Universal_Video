@@ -198,10 +198,12 @@ test.describe('timeline thumbnails and waveforms', () => {
       await stripsSettled(page)
       const used = await page.locator('[data-testid=filmstrip]').getAttribute('data-path')
       if (path === 'element' || info.project.name === 'chromium') expect(used).toBe(path)
-      // The first thumbnail, at CSS x across its 60 × 34 slot, halfway down.
-      // Upright and fitted it is a 19 px portrait picture in the middle of the
-      // slot (x 20–39): blue then red, black either side. On its side it
-      // would fill the slot, red over blue.
+      // The first thumbnail, at CSS x across its slot, halfway down. The clip
+      // is SHOWN 180 × 320, so its slot is portrait too — 19 × 34 — and the
+      // upright picture fills it: blue down the left, red down the right. On
+      // its side it would be red over blue, the same colour all the way across
+      // a row (and before 2026-10-12, when the source still counted as its
+      // coded 320 × 180, the slot was 60 wide with the picture pillarboxed in it).
       const at = (x: number) =>
         page.evaluate((x) => {
           const canvas = document.querySelector('[data-testid=filmstrip]') as HTMLCanvasElement
@@ -210,10 +212,8 @@ test.describe('timeline thumbnails and waveforms', () => {
           const d = canvas.getContext('2d')!.getImageData(Math.round(x * k), Math.round(canvas.height / 2), 1, 1).data
           return [d[0], d[1], d[2]] as [number, number, number]
         }, x)
-      expect(named(await at(24))).toBe('blue')
-      expect(named(await at(35))).toBe('red')
-      const bar = await at(6)
-      expect(Math.max(...bar), `the bar beside the picture is black, got ${bar}`).toBeLessThan(40)
+      expect(named(await at(4))).toBe('blue')
+      expect(named(await at(15))).toBe('red')
     })
   }
 

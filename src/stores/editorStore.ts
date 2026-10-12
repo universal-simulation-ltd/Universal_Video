@@ -65,6 +65,7 @@ import {
 import { segmentsOf, separateBlocked, zipName, type ExportMode } from '../lib/segments'
 import { batchProgress, secondsRemaining } from '../lib/eta'
 import { deleteRecent, getRecent, listRecents, saveRecent, type RecentMeta } from '../lib/recents'
+import { readRotation } from '../lib/strips/rotation'
 
 /**
  * The editor IS the app.
@@ -427,14 +428,21 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
           if (isVideo) {
             const probe = await probeVideoFile(file)
-            source = describeSource(id, 'video', file.name, probe.duration, probe.width, probe.height, probe.hasAudio)
+            // The size it is SHOWN at. A phone held upright codes landscape
+            // frames plus a quarter turn (see `lib/strips/rotation.ts`); the
+            // player shows it upright, so the movie's frame, the label and the
+            // export all go by the turned shape.
+            const turn = await readRotation(file, probe.tracks.find((t) => t.kind === 'video')?.id)
+            const sideways = turn === 90 || turn === 270
+            const shown = { width: sideways ? probe.height : probe.width, height: sideways ? probe.width : probe.height }
+            source = describeSource(id, 'video', file.name, probe.duration, shown.width, shown.height, probe.hasAudio)
             fps = probe.fps
             assets[id] = {
               file,
               url,
               probe: {
-                width: probe.width,
-                height: probe.height,
+                width: shown.width,
+                height: shown.height,
                 duration: probe.duration,
                 fps: probe.fps,
                 hasAudio: probe.hasAudio,
@@ -443,7 +451,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
             }
             remember.push({
               file,
-              probe: { durationSec: probe.duration, width: probe.width, height: probe.height },
+              probe: { durationSec: probe.duration, width: shown.width, height: shown.height },
             })
           } else {
             const size = await imageSize(file, url)
