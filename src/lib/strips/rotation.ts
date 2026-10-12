@@ -30,7 +30,7 @@ export function rotationFromMatrix(a: number, b: number): Rotation {
   return (quarter * 90) as Rotation
 }
 
-export interface Box {
+interface Box {
   type: string
   /** Where the box's body starts (after the size/type header). */
   body: number
@@ -39,7 +39,7 @@ export interface Box {
 }
 
 /** The child boxes laid out between `from` and `to`. */
-export function boxesIn(view: DataView, from: number, to: number): Box[] {
+function boxesIn(view: DataView, from: number, to: number): Box[] {
   const out: Box[] = []
   let at = from
   while (at + 8 <= to) {

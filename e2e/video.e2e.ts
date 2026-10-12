@@ -38,14 +38,6 @@ const PORTRAIT_BYTES = readFileSync(PORTRAIT)
 //   ffmpeg -display_rotation:v:0 -90 -i plain.mp4 -c copy -movflags +faststart rotated-90-noisy-320x180.mp4
 // (ffmpeg counts anticlockwise; ffprobe reports rotation=-90.)
 const ROTATED_BYTES = readFileSync(join(HERE, 'fixtures', 'rotated-90-noisy-320x180.mp4'))
-// The timeline renderer turns rotated frames from @unisim/media 0.8.0.
-const MEDIA_VERSION: string = JSON.parse(
-  readFileSync(join(HERE, '..', 'node_modules', '@unisim', 'media', 'package.json'), 'utf8'),
-).version
-const MEDIA_TURNS_FRAMES = (() => {
-  const [major, minor] = MEDIA_VERSION.split('.').map(Number)
-  return major > 0 || minor >= 8
-})()
 
 /**
  * Open the actions dropdown and click one of its rows.
@@ -1389,9 +1381,7 @@ test.describe('Universal Video', () => {
   test('a phone video shot upright, reframed to landscape, is upright in the frame', async ({ page }) => {
     // The other export route: a reframe goes through the timeline renderer,
     // which composites decoded frames onto a canvas of its own — so the turn
-    // has to be applied INSIDE @unisim/media, and only 0.8.0 does. Skipped
-    // until the app is on it; it starts running by itself after the bump.
-    test.skip(!MEDIA_TURNS_FRAMES, `@unisim/media ${MEDIA_VERSION} draws a phone clip on its side; 0.8.0 turns it`)
+    // is applied inside @unisim/media (0.8.0 and later).
     await page.goto('/')
     await drop(page, 'rotated.mp4', ROTATED_BYTES)
     await expect(page.getByText(/180×320 · 0:02/).first()).toBeVisible()
