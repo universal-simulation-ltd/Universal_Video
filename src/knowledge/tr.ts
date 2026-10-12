@@ -197,8 +197,7 @@ Birkaç küçük şey interneti kullanır ve bunların hiçbiri videonuzu ya da 
 - **Uygulamanın yüklenmesi** ve her güncellemede nelerin değiştiğine dair notlar.
 - **Örnek video**, denemeyi seçerseniz. Bu, sizden yapılan bir yükleme değil, size doğru bir indirmedir.
 - **Universal ID ile oturum açma**, yalnızca siz isterseniz. Universal Video’daki hiçbir şey hesap gerektirmez.
-- **Uygulamanın açıldığına dair bir not**, oturum açtıysanız ziyaret başına bir kez gönderilir; böylece hesabınızın etkinliği doğru olur. Hiçbir videonun adını, süresini ya da boyutunu içermez.
-- **Bir “kullanımda” sinyali**, uygulama açık ve ekranda olduğu sürece her 45 saniyede bir gönderilir; böylece uygulama kaç kişinin kullandığını gösterebilir. Uygulamanın adını, bu cihazda oluşturulan rastgele bir kimliği ve oturum açtıysanız hesabınızı içerir. Üzerinde çalıştığınız şey hakkında hiçbir şey söylemez.
+- **Anonim bir günlük açılış sayımı**: uygulamayı her gün ilk açışınızda, ilk tıklamanızdan veya tuşa basmanızdan sonra uygulamanın adını ve platform türünü ("web") gönderir. Hiçbir tanımlayıcı, hesap ya da ne yaptığınıza dair bir şey yoktur. "Bugün sayıldı" işareti bu cihazda kalır ve asla gönderilmez.
 
 Üçüncü taraf analiz, reklam ya da izleme betiği yoktur.
 

@@ -197,8 +197,7 @@ Algunas cosas pequeñas sí usan internet, y ninguna incluye su vídeo ni inform
 - **Cargar la aplicación**, y las notas sobre las novedades de cada actualización.
 - **El vídeo de ejemplo**, si decide probarlo. Es una descarga hacia usted, no una subida suya.
 - **Iniciar sesión con un Universal ID**, solo si usted quiere. Nada en Universal Video necesita una cuenta.
-- **Un aviso de que se abrió la aplicación**, enviado una vez por visita si ha iniciado sesión, para que la actividad de su cuenta sea correcta. No incluye el nombre, la duración ni el tamaño de ningún vídeo.
-- **Una señal de «en uso»**, enviada cada 45 segundos mientras la aplicación está abierta y en pantalla, para poder mostrar cuántas personas la usan. Contiene el nombre de la aplicación, un identificador aleatorio creado en este dispositivo y su cuenta si ha iniciado sesión. No dice nada de aquello en lo que está trabajando.
+- **Un recuento anónimo de aperturas diarias**: la primera vez que abre la aplicación cada día, tras su primer clic o pulsación de tecla, envía el nombre de la aplicación y el tipo de plataforma («web»). Ningún identificador, ninguna cuenta y nada sobre lo que hace. Una marca de «ya contado hoy» se queda en este dispositivo y nunca se envía.
 
 No hay analítica de terceros, publicidad ni scripts de seguimiento.
 

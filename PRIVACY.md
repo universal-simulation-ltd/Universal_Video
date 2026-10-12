@@ -53,14 +53,20 @@ privacy page that pretended otherwise would look like a lie.
   See [`src/components/Landing.tsx`](src/components/Landing.tsx).
 - **Signing in.** Only if you choose to. Nothing in this app requires it, and
   nothing in it changes when you do: signing in gives you the suite's shared
-  account and settings, not a place to put your video. The app does not
-  record that you opened it, signed in or not.
-- **"This app is in use".** While the app is open and on screen, it tells our
-  server every 45 seconds that this app is in use on this device, so the menu
-  can say how many people use it and how many are using it now. That message
-  holds the app's name and a random ID made on this device, and your account
-  if you are signed in: nothing about what you are working on. See `presence.ts`
-  in `@unisim/sdk`.
+  account and settings, not a place to put your video. The app keeps no
+  record of you opening it, signed in or not: the only trace of an open is the
+  anonymous count below.
+- **An anonymous daily open count.** Once a day, the first time you open the
+  app (after your first click or key press), it adds one to that day's total
+  for this app. It sends the app's name and the kind of platform ("web") and
+  nothing else: no identifier, no account even if you are signed in, and
+  nothing about what you are working on. A "counted today" mark stays in your
+  browser and is never sent. The totals identify nobody and are kept
+  indefinitely. See `countDailyOpen` in `presence.ts` in `@unisim/sdk`
+  (Video is a website only and leaves `openCount` at its default, on). This
+  replaced the old "this app is in use" signal, a random install ID sent every
+  45 seconds, which `@unisim/sdk` 0.187.0 retired: no install ID is sent or
+  kept any more.
 - **The changelog and update notice.**
 
 **There is no third-party analytics, no tracking pixel, and no advertising

@@ -197,8 +197,7 @@ Einige kleine Dinge laufen über das Internet, und keines davon enthält Ihr Vid
 - **Das Laden der App** sowie die Hinweise, was sich mit jedem Update geändert hat.
 - **Das Beispielvideo**, wenn Sie es ausprobieren möchten. Das ist ein Download zu Ihnen, kein Upload von Ihnen.
 - **Die Anmeldung mit einer Universal ID**, nur wenn Sie es wünschen. Nichts in Universal Video setzt ein Konto voraus.
-- **Ein Hinweis, dass die App geöffnet wurde**, einmal pro Besuch, wenn Sie angemeldet sind, damit die Aktivität Ihres Kontos stimmt. Er enthält weder Namen noch Länge noch Größe eines Videos.
-- **Ein „In Benutzung“-Signal**, das alle 45 Sekunden gesendet wird, solange die App geöffnet und auf dem Bildschirm zu sehen ist, damit sie anzeigen kann, wie viele Menschen sie nutzen. Es enthält den Namen der App, eine zufällige, auf diesem Gerät erzeugte ID und Ihr Konto, wenn Sie angemeldet sind. Über Ihre Arbeit sagt es nichts.
+- **Eine anonyme Zählung der täglichen Öffnungen**: Beim ersten Öffnen der App an jedem Tag, nach Ihrem ersten Klick oder Tastendruck, sendet sie den Namen der App und die Art der Plattform („web“). Keine Kennung, kein Konto und nichts darüber, was Sie tun. Eine Markierung „heute schon gezählt“ bleibt auf diesem Gerät und wird nie gesendet.
 
 Es gibt keine Analysewerkzeuge von Drittanbietern, keine Werbung und keine Tracking-Skripte.
 

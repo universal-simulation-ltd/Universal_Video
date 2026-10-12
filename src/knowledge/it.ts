@@ -197,8 +197,7 @@ Alcune piccole cose usano internet, e nessuna contiene il tuo video o informazio
 - **Il caricamento dell’app**, e le note sulle novità di ogni aggiornamento.
 - **Il video di esempio**, se scegli di provarlo. È un download verso di te, non un caricamento da parte tua.
 - **L’accesso con un Universal ID**, solo se lo scegli. Niente in Universal Video richiede un account.
-- **Una nota che l’app è stata aperta**, inviata una volta per visita se hai effettuato l’accesso, così l’attività del tuo account è corretta. Non contiene il nome, la durata o la dimensione di alcun video.
-- **Un segnale «in uso»**, inviato ogni 45 secondi mentre l’app è aperta e visibile sullo schermo, così l’app può mostrare quante persone la stanno usando. Contiene il nome dell’app, un ID casuale creato su questo dispositivo e il tuo account se hai effettuato l’accesso. Non dice nulla di ciò su cui stai lavorando.
+- **Un conteggio anonimo delle aperture quotidiane**: la prima volta che apri l’app ogni giorno, dopo il tuo primo clic o tasto premuto, invia il nome dell’app e il tipo di piattaforma («web»). Nessun identificativo, nessun account e niente su ciò che fai. Un segno «già contato oggi» resta su questo dispositivo e non viene mai inviato.
 
 Non ci sono strumenti di analisi di terze parti, pubblicità o script di tracciamento.
 

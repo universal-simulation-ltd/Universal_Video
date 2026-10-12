@@ -197,8 +197,7 @@ Quelques petites choses passent par internet, et aucune ne contient votre vidéo
 - **Le chargement de l’application**, ainsi que les notes sur les nouveautés de chaque mise à jour.
 - **La vidéo d’exemple**, si vous choisissez de l’essayer. Il s’agit d’un téléchargement vers vous, pas d’un envoi de votre part.
 - **La connexion avec un Universal ID**, uniquement si vous le souhaitez. Rien dans Universal Video n’exige de compte.
-- **Une note indiquant que l’application a été ouverte**, envoyée une fois par visite si vous êtes connecté, pour que l’activité de votre compte soit exacte. Elle ne contient ni le nom, ni la durée, ni la taille d’aucune vidéo.
-- **Un signal « en cours d’utilisation »**, envoyé toutes les 45 secondes tant que l’application est ouverte et affichée, pour qu’elle puisse indiquer combien de personnes l’utilisent. Il contient le nom de l’application, un identifiant aléatoire créé sur cet appareil, et votre compte si vous êtes connecté. Il ne dit rien de ce sur quoi vous travaillez.
+- **Un décompte anonyme des ouvertures quotidiennes** : la première fois que vous ouvrez l’application chaque jour, après votre premier clic ou votre première frappe au clavier, elle envoie le nom de l’application et le type de plateforme (« web »). Aucun identifiant, aucun compte et rien sur ce que vous faites. Une marque « déjà compté aujourd’hui » reste sur cet appareil et n’est jamais envoyée.
 
 Il n’y a aucun outil d’analyse tiers, aucune publicité et aucun script de suivi.
 
