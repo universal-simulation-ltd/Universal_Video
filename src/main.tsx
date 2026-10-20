@@ -5,8 +5,13 @@ import App from './App'
 import './index.css'
 
 // Universal Video never sends a byte of anyone's footage anywhere. We still
-// mount <UniversalProvider> so the shared navbar works and, when the visitor is
-// signed in on .unisim.co.uk, the navbar shows their profile/avatar.
+// mount <UniversalProvider> so the shared navbar works.
+//
+// No sign-in (James, 2026-10-20: no logins in first iterations unless they
+// improve the experience; Docs_UNI_SIM/login-free-plan.md). Signing in never
+// unlocked anything here, so `noAccounts: true` drops the account rows and
+// keeps the app signed out of the suite session; with it the SDK's anonymous
+// open count is off too (SDK 0.187), as in Charts, Beam and the rest.
 //
 // The fallback is the REAL public suite project (publishable anon key — safe to
 // ship; RLS is the security boundary). Env overrides.
@@ -48,6 +53,7 @@ const universalConfig = {
   supabaseAnonKey: import.meta.env.VITE_PLATFORM_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5Z2Z4Z2Fsb2pvanBweG1oZGRvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NTY4MjUsImV4cCI6MjA5NDMzMjgyNX0.hLy_vt9vY_rdPKF3nL32yAuMCD604E3CH5VM7D7CaNE',
   product: 'video' as const,
   cookieDomain: import.meta.env.PROD ? '.unisim.co.uk' : undefined,
+  noAccounts: true,
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
