@@ -1,7 +1,10 @@
 # The Playwright specs in `e2e/*.e2e.ts`, on every push and pull request:
 # `npx playwright test` starts the Vite dev server on :5199 itself (see
 # playwright.config.ts) and puts a real MP4 through the app. Chromium for
-# everything, WebKit (the iPhone engine) for the timeline strips.
+# everything, WebKit (the iPhone engine) for the timeline strips. On Linux,
+# which is what this runs on, the WebKit project and two Chromium specs that
+# need an AAC decoder are left out: see LINUX_SKIP_* at the top of
+# playwright.config.ts, which says why for each.
 #
 # @playwright/test is a devDependency, locked at the version below.
 #
