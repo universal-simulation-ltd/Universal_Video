@@ -7,11 +7,14 @@ import './index.css'
 // Universal Video never sends a byte of anyone's footage anywhere. We still
 // mount <UniversalProvider> so the shared navbar works.
 //
-// No sign-in (James, 2026-10-20: no logins in first iterations unless they
-// improve the experience; Docs_UNI_SIM/login-free-plan.md). Signing in never
-// unlocked anything here, so `noAccounts: true` drops the account rows and
-// keeps the app signed out of the suite session; with it the SDK's anonymous
-// open count is off too (SDK 0.187), as in Charts, Beam and the rest.
+// No accounts of its own (James, 2026-10-20: no logins in first iterations
+// unless they improve the experience; Docs_UNI_SIM/login-free-plan.md).
+// Signing in never unlocked anything here, so `noAccounts: true` drops the
+// account rows; with it the SDK's anonymous open count is off too (SDK 0.187),
+// as in Charts, Beam and the rest. Since SDK 0.211.0 it no longer keeps the
+// app signed out: a suite session the browser already holds is read and
+// followed (Global Tuning comes with it) and Tune this app offers a discreet
+// Sign in.
 //
 // The fallback is the REAL public suite project (publishable anon key — safe to
 // ship; RLS is the security boundary). Env overrides.

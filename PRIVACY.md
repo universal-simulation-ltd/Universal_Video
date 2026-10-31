@@ -51,10 +51,12 @@ privacy page that pretended otherwise would look like a lie.
 - **The example video**, if you click "try an example" — that is a download
   from us to you, not the other way around.
   See [`src/components/Landing.tsx`](src/components/Landing.tsx).
-- **No sign-in, and no open count.** The app has no sign-in (since
-  2026-10-20; it never unlocked anything here), and it stays signed out even
-  if your browser is signed in to UNI·SIM elsewhere. With no sign-in, the
-  suite's anonymous daily open count is off too, so nothing records that you
+- **No account of its own, and no open count.** Nothing in the app needs a
+  sign-in (since 2026-10-20; it never unlocked anything here). If your browser
+  is already signed in to UNI·SIM elsewhere, the app recognises it so your
+  suite-wide settings, such as colour scheme and language, come with you, and
+  Tune this app offers a discreet Sign in; your videos are never tied to it.
+  The suite's anonymous daily open count is off, so nothing records that you
   opened it. See `noAccounts` in [`src/main.tsx`](src/main.tsx).
 - **The changelog and update notice.**
 
