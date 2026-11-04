@@ -144,7 +144,7 @@ export default function ExportPanel() {
             piece, which is what keeps a five-file export as simple to set up as
             a one-file one. */}
         <Field label="What comes out">
-          <div className="grid grid-cols-2 gap-1.5">
+          <div className="u-tabs grid w-full grid-cols-2">
             <ModeButton
               selected={mode === 'one'}
               disabled={busy}
@@ -231,18 +231,15 @@ export default function ExportPanel() {
         <hr className="border-slate-100 dark:border-slate-800" />
 
         <Field label="How small">
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="u-tabs grid w-full grid-cols-3">
             {QUALITIES.map((q) => (
               <button
                 key={q.value}
                 type="button"
                 disabled={busy}
+                aria-pressed={settings.quality === q.value}
                 onClick={() => update({ quality: q.value })}
-                className={`rounded-lg px-3 py-2 text-[13px] font-semibold transition-colors disabled:opacity-50 ${
-                  settings.quality === q.value
-                    ? 'bg-orange-700 text-white'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
-                }`}
+                className="u-tab justify-center disabled:opacity-50"
               >
                 {q.label}
               </button>
@@ -294,18 +291,15 @@ export default function ExportPanel() {
 
         {settings.keepAudio && (
           <Field label="Sound quality (kbps)">
-            <div className="grid grid-cols-4 gap-1.5">
+            <div className="u-tabs grid w-full grid-cols-4">
               {AUDIO_BITRATES.map((b) => (
                 <button
                   key={b}
                   type="button"
                   disabled={busy}
+                  aria-pressed={settings.audioBitrateKbps === b}
                   onClick={() => update({ audioBitrateKbps: b })}
-                  className={`rounded-lg px-2 py-1.5 text-[12px] font-semibold tabular-nums transition-colors disabled:opacity-50 ${
-                    settings.audioBitrateKbps === b
-                      ? 'bg-orange-700 text-white'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
-                  }`}
+                  className="u-tab justify-center px-2 tabular-nums disabled:opacity-50"
                 >
                   {b}
                 </button>
@@ -332,9 +326,7 @@ export default function ExportPanel() {
             <button
               type="button"
               onClick={accept}
-              className={`mt-3 rounded-lg px-3 py-1.5 text-[12px] font-semibold text-white ${
-                refused ? 'bg-red-700 hover:bg-red-800' : 'bg-amber-700 hover:bg-amber-800'
-              }`}
+              className="u-btn u-btn--sm mt-3"
             >
               Use {plan.alternative.label.toLowerCase()}
             </button>
@@ -353,8 +345,14 @@ export default function ExportPanel() {
         type="button"
         onClick={() => void exportEdit()}
         disabled={stopped || (mode === 'separate' && separateBlock !== null)}
-        className="w-full rounded-2xl bg-orange-700 px-5 py-4 text-left text-white transition-colors hover:bg-orange-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
+        className="u-btn u-btn--primary w-full justify-start whitespace-normal text-left"
       >
+        <span className="u-btn__key" aria-hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 4v12M7 11l5 5 5-5M5 20h14" />
+          </svg>
+        </span>
+        <span className="min-w-0 flex-1 py-3">
         <span className="block text-[15px] font-semibold">
           {refused || supported === false
             ? 'Can’t export this here'
@@ -382,6 +380,7 @@ export default function ExportPanel() {
           {formatDuration(plan.estimate.seconds)}
           {!stopped && saving > 0.02 && ` · ${Math.round(saving * 100)}% smaller`}
           {!stopped && saving < -0.02 && ` · ${Math.round(-saving * 100)}% BIGGER than the original`}
+        </span>
         </span>
       </button>
     </div>
@@ -469,11 +468,7 @@ function ModeButton({
       disabled={disabled}
       aria-pressed={selected}
       onClick={onClick}
-      className={`rounded-lg px-3 py-2 text-[13px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-        selected
-          ? 'bg-orange-700 text-white'
-          : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
-      }`}
+      className="u-tab justify-center disabled:cursor-not-allowed disabled:opacity-50"
     >
       {label}
     </button>

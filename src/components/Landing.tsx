@@ -30,11 +30,11 @@ import { useThemeStore } from '../stores/themeStore'
  * of them.
  */
 
-/** The pill every button in the card wears — PDF's, so the two cards match. */
-const PILL =
-  'w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium transition-colors'
-const PILL_IDLE =
-  'border-slate-300 hover:border-orange-400 hover:bg-orange-50/40 text-slate-700 dark:border-slate-700 dark:text-slate-200 dark:hover:border-orange-500 dark:hover:bg-orange-950/30'
+/** The button every way in wears: the suite's secondary key button (SDK 0.216,
+ *  BRANDING.md → Buttons), full width. `whitespace-normal` because the longer
+ *  labels need two lines on a phone; `justify-start` keeps the key (the old
+ *  glyph) at the leading edge of a full-width button. */
+const PILL = 'u-btn w-full justify-start whitespace-normal text-left'
 
 export default function Landing() {
   const theme = useThemeStore((s) => s.effective)
@@ -109,9 +109,9 @@ export default function Landing() {
       type="button"
       onClick={loadExample}
       disabled={loadingExample}
-      className={`${PILL} ${PILL_IDLE} disabled:opacity-60 disabled:cursor-wait`}
+      className={`${PILL} disabled:cursor-wait`}
     >
-      <span aria-hidden="true">🧪</span>
+      <span className="u-btn__key" aria-hidden="true">🧪</span>
       {loadingExample ? 'Opening example…' : 'Try with an example video'}
     </button>
   )
@@ -159,9 +159,9 @@ export default function Landing() {
           {recents.length > 0 ? (
             <details className="group mt-5">
               <summary
-                className={`${PILL} ${PILL_IDLE} cursor-pointer select-none list-none`}
+                className={`${PILL} select-none list-none`}
               >
-                <span aria-hidden="true">🕘</span>
+                <span className="u-btn__key" aria-hidden="true">🕘</span>
                 Recent videos
                 <span
                   className="text-base text-slate-400 transition-transform group-open:rotate-180"
@@ -259,10 +259,10 @@ export default function Landing() {
               'mt-3',
               dragOverCompress
                 ? 'border-amber-500 border-dashed bg-amber-50 text-amber-900'
-                : PILL_IDLE,
+                : '',
             ].join(' ')}
           >
-            <span aria-hidden="true">⬇</span>
+            <span className="u-btn__key" aria-hidden="true">⬇</span>
             {dragOverCompress ? 'Drop to compress' : '1 Click Compress — one video, straight to smaller'}
           </button>
           <input
@@ -304,9 +304,9 @@ export default function Landing() {
                 setIntent('convert')
                 convertInputRef.current?.click()
               }}
-              className={`${PILL} ${PILL_IDLE} mt-3`}
+              className={`${PILL} mt-3`}
             >
-              <span aria-hidden="true">⇄</span>
+              <span className="u-btn__key" aria-hidden="true">⇄</span>
               Convert — pick the size, shape and quality
             </button>
             <input
@@ -328,9 +328,9 @@ export default function Landing() {
             <button
               type="button"
               onClick={() => joinInputRef.current?.click()}
-              className={`${PILL} ${PILL_IDLE} mt-3`}
+              className={`${PILL} mt-3`}
             >
-              <span aria-hidden="true">⧉</span>
+              <span className="u-btn__key" aria-hidden="true">⧉</span>
               Join videos — several, one after another
             </button>
             <input

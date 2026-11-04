@@ -69,7 +69,7 @@ export default function Toolbar() {
       >
         Cut at {timecode(playheadSec)}
       </Action>
-      <Action onClick={removeSelected} disabled={busy || !selectedClipId}>
+      <Action onClick={removeSelected} disabled={busy || !selectedClipId} danger>
         Delete clip
       </Action>
 
@@ -138,6 +138,7 @@ function Action({
   title,
   label,
   keyShortcut,
+  danger,
   children,
 }: {
   onClick: () => void
@@ -147,6 +148,8 @@ function Action({
   label?: string
   /** The key that does the same thing, announced rather than only documented. */
   keyShortcut?: string
+  /** Delete wears the danger rank. */
+  danger?: boolean
   children: React.ReactNode
 }) {
   return (
@@ -157,7 +160,8 @@ function Action({
       title={title}
       aria-label={label}
       aria-keyshortcuts={keyShortcut}
-      className="rounded-lg bg-slate-100 px-3 py-1.5 text-[12px] font-semibold text-slate-700 transition-colors hover:bg-slate-200 disabled:opacity-40 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+      // The suite's key buttons, small (SDK 0.216, BRANDING.md → Buttons).
+      className={danger ? 'u-btn u-btn--danger u-btn--sm' : 'u-btn u-btn--sm'}
     >
       {children}
     </button>

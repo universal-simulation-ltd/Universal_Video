@@ -45,7 +45,7 @@ export default function SourceBin() {
           type="button"
           onClick={reset}
           disabled={busy}
-          className="shrink-0 rounded-lg px-3 py-1.5 text-[12px] font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800"
+          className="u-btn u-btn--quiet u-btn--sm shrink-0"
         >
           Start again
         </button>

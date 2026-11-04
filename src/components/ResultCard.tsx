@@ -65,8 +65,6 @@ export default function ResultCard() {
         title: 'text-amber-900 dark:text-amber-100',
         body: 'text-amber-800 dark:text-amber-200',
         list: 'divide-amber-200 border-amber-200 dark:divide-amber-900 dark:border-amber-900',
-        action: 'bg-amber-700 hover:bg-amber-800',
-        quiet: 'text-amber-800 hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-slate-800',
         footer: 'text-amber-800/80 dark:text-amber-200/70',
       }
     : {
@@ -74,8 +72,6 @@ export default function ResultCard() {
         title: 'text-emerald-900 dark:text-emerald-100',
         body: 'text-emerald-800 dark:text-emerald-200',
         list: 'divide-emerald-200 border-emerald-200 dark:divide-emerald-900 dark:border-emerald-900',
-        action: 'bg-emerald-700 hover:bg-emerald-800',
-        quiet: 'text-emerald-800 hover:bg-emerald-100 dark:text-emerald-200 dark:hover:bg-slate-800',
         footer: 'text-emerald-800/80 dark:text-emerald-200/70',
       }
 
@@ -148,7 +144,7 @@ export default function ResultCard() {
                 <button
                   type="button"
                   onClick={() => downloadPiece(index)}
-                  className={`shrink-0 rounded-md px-2 py-1 text-[11.5px] font-semibold ${tone.quiet}`}
+                  className="u-btn u-btn--quiet u-btn--sm shrink-0"
                 >
                   Save
                 </button>
@@ -163,15 +159,20 @@ export default function ResultCard() {
           <button
             type="button"
             onClick={download}
-            className={`rounded-lg px-4 py-2 text-[13px] font-semibold text-white ${tone.action}`}
+            className="u-btn u-btn--primary"
           >
+            <span className="u-btn__key" aria-hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 4v12M7 11l5 5 5-5M5 20h14" />
+              </svg>
+            </span>
             {pieces ? `Save all ${pieces.length} as ${result.name}` : `Save ${result.name}`}
           </button>
         )}
         <button
           type="button"
           onClick={reset}
-          className={`rounded-lg bg-white px-4 py-2 text-[13px] font-semibold hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 ${tone.title}`}
+          className="u-btn"
         >
           Start something else
         </button>
