@@ -313,12 +313,28 @@ export default function Player() {
       />
 
       <div className="mt-2 flex items-center gap-3">
+        {/* A secondary key button like the rest of the editor (BRANDING.md →
+            Buttons): it was a white-on-orange block, the one button off the
+            suite's look. Secondary, not primary: Export is this view's one
+            primary. Fixed width so Play ↔ Pause doesn't nudge the row. */}
         <button
           type="button"
           onClick={() => setPlaying(!playing)}
           aria-label={playing ? 'Pause' : 'Play'}
-          className="shrink-0 rounded-lg bg-orange-700 px-4 py-2 text-[13px] font-semibold text-white hover:bg-orange-800"
+          className="u-btn shrink-0 min-w-[6.5rem]"
         >
+          <span className="u-btn__key" aria-hidden="true">
+            {playing ? (
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="5" width="4" height="14" rx="1" />
+                <rect x="14" y="5" width="4" height="14" rx="1" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.2-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" />
+              </svg>
+            )}
+          </span>
           {playing ? 'Pause' : 'Play'}
         </button>
 
