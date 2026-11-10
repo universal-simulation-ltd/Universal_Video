@@ -187,6 +187,9 @@ export default function App() {
           the page: a screen reader read it twice, and the e2e spec's strict-mode
           locator matched both and failed. */}
       <UniversalAppsNavBar
+        // Signed in, the bar says whose it is: "Bradley’s Videos" ("James’ Videos",
+        // "My Videos" with no name), and Tune this app gets the account area (James, 2026-11-10 rollout).
+        personalTitle={(name) => (name ? `${/s$/i.test(name.trim()) ? `${name}’` : `${name}’s`} Videos` : 'My Videos')}
         contentClassName={CONTAINER}
         product="video"
         productLogo={<ProductLogo />}
