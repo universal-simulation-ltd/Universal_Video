@@ -58,6 +58,11 @@ export default function ResultCard() {
   // Whether a piece can be saved on its own. False for a streamed batch, where
   // the blob is gone by design — see `BatchPiece.file`.
   const piecesInTab = pieces?.some((piece) => piece.file !== null) ?? false
+  // What the key tab names: the file that came out, by its kind. A batch is
+  // always a zip; one movie is whatever its name ends in (MP4, or the original
+  // handed back untouched).
+  const fileName = result?.name ?? savedTo?.name ?? ''
+  const kind = pieces ? 'ZIP' : (fileName.match(/\.([a-z0-9]+)$/i)?.[1] ?? 'MP4').toUpperCase()
 
   const tone = partial
     ? {
@@ -76,7 +81,11 @@ export default function ResultCard() {
       }
 
   return (
-    <div className={`rounded-2xl border p-5 ${tone.card}`}>
+    // The outcome: a record carrying a value, so the suite's Key box
+    // (BRANDING.md → Boxes, C). The tab stays neutral and names what it is;
+    // green or amber stays on the card, and the title says it in words.
+    <div className={`u-box u-box--key border px-5 pb-5 pt-6 ${tone.card}`}>
+      <span className="u-box__key">Result · {kind}</span>
       <p ref={titleRef} tabIndex={-1} className={`text-[15px] font-semibold outline-none ${tone.title}`}>
         {partial
           ? `Stopped after ${partial.written} of ${partial.total} — the ${partial.written} that finished are saved`

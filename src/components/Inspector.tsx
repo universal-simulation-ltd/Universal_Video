@@ -23,7 +23,9 @@ export default function Inspector() {
 
   if (!clip) {
     return (
-      <p className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-[12.5px] text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+      // Nothing picked yet: an empty state, so the suite's Viewfinder box with
+      // nothing in frame (BRANDING.md → Boxes, D), all four corners muted.
+      <p className="u-box u-box--frame u-box--empty self-start px-5 py-6 text-[12.5px] text-slate-500 dark:text-slate-400">
         Pick a clip on the timeline to trim it, mute it, or give it a transition.
       </p>
     )

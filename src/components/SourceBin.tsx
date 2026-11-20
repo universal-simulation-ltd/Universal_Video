@@ -19,7 +19,10 @@ export default function SourceBin() {
   if (!timeline.sources.length) return null
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-900">
+    // A record of facts read from each file: the suite's Key box (BRANDING.md
+    // → Boxes, C), its tab saying what the list is.
+    <div className="u-box u-box--key bg-white px-5 pb-4 pt-6 dark:bg-slate-900">
+      <span className="u-box__key">{timeline.sources.length === 1 ? 'Source file' : 'Source files'}</span>
       <div className="flex items-start gap-4">
         <ul className="min-w-0 flex-1 space-y-2">
           {timeline.sources.map((source) => {

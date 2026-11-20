@@ -147,8 +147,11 @@ export default function Landing() {
 
         {/* One box, read top to bottom: open → recent → compress → more
             options. Universal PDF's card, in the same order, so the two apps
-            teach each other. */}
-        <div className="mt-7 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 dark:border-slate-800 dark:bg-slate-900">
+            teach each other. It is where the video comes in, with nothing in
+            frame yet: the suite's Viewfinder box, empty (BRANDING.md → Boxes,
+            D), all four corners muted and no outline. It keeps its white fill,
+            which the drop circle is drawn for. */}
+        <div className="u-box u-box--frame u-box--empty mt-7 rounded-lg bg-white p-5 text-left sm:p-6 dark:bg-slate-900">
           <DropZone />
 
           {/* The same slot either way — "Recent videos" once there are some,
@@ -171,13 +174,17 @@ export default function Landing() {
                 </span>
               </summary>
               <div className="mt-3">
-                <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+                {/* Each recent video is a row you tap to open it: the suite's
+                    Orbit corner (BRANDING.md → Boxes, A). Forget sits over the
+                    row's trailing end rather than inside the button, so the
+                    row stays one button with the file's name as its name. */}
+                <ul className="space-y-2">
                   {recents.map((r) => (
-                    <li key={r.id} className="flex items-center gap-2 py-1.5">
+                    <li key={r.id} className="relative">
                       <button
                         type="button"
                         onClick={() => void openRecent(r.id)}
-                        className="min-w-0 flex-1 rounded px-1 py-1 text-left hover:bg-orange-50/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 dark:hover:bg-orange-950/30"
+                        className="u-box u-box--orbit u-box--row min-w-0 py-2 pl-3 pr-11 text-left"
                       >
                         <span className="block truncate text-[13px] font-medium text-slate-800 dark:text-slate-200">
                           {r.name}
@@ -192,7 +199,7 @@ export default function Landing() {
                         type="button"
                         onClick={() => void forgetRecent(r.id)}
                         aria-label={`Forget ${r.name}`}
-                        className="shrink-0 rounded px-2 py-1 text-slate-400 hover:text-red-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-1.5 text-slate-400 hover:text-red-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600"
                       >
                         {/* ⚠️ An SVG, not `✕` — U+2715 has no glyph in iOS's
                             system font and WebKit does not fall back even
