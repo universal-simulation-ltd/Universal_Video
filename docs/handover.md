@@ -1433,7 +1433,8 @@ buckets, peak columns), `strip.worker.ts` (WebCodecs), `service.ts` (cache,
 scheduler, the main-thread fallbacks), `yuv.ts` (frame → thumbnail pixels),
 `protocol.ts` (the messages). Drawn by `components/ClipStrips.tsx`; the Tune
 row is `components/StripsPreference.tsx` (localised in all eight languages);
-the setting is `stores/prefsStore.ts`.
+the setting is `stores/prefsStore.ts` (an SDK synced store since 2026-11-20:
+on the device and, signed in, on the account).
 
 **Decisions worth keeping:**
 
